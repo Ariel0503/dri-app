@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { Gauge, AlertTriangle, Layers, FileBarChart, Settings as Cog, ChevronDown, ChevronRight, Plus, Trash2, Download, Calendar, GitBranch, List, Upload, FileDown, CheckSquare, Square, Save, LogOut, Lock, Pencil, CheckCheck, Eraser } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import * as XLSX from "xlsx";
+import { supabase } from "./lib/supabase";
 
 /* ============================================================================
    SUPABASE PERSISTENCE (optional, repo-only — preview runs in-memory)
