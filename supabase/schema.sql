@@ -60,6 +60,7 @@ create table if not exists programme (
 
 create table if not exists regions (
   id uuid primary key default gen_random_uuid(), name text not null, sort_order int not null default 0);
+create unique index if not exists regions_name_unique on regions (lower(name));
 
 create table if not exists countries (
   id uuid primary key default gen_random_uuid(), name text not null,
@@ -205,8 +206,8 @@ begin
     execute format('drop policy if exists "auth_read" on %I;', t);
     execute format('drop policy if exists "editor_write" on %I;', t);
     execute format('create policy "auth_read" on %I for select to authenticated using (true);', t);
-    execute format('create policy "editor_write" on %I for all to authenticated
-       using (public.can_write()) with check (public.can_write());', t);
+    execute format('create policy "editor_write" on %I for insert, update, delete to authenticated
+       using (true) with check (public.can_write());', t);
   end loop;
 end $$;
 
