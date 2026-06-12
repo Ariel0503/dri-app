@@ -106,7 +106,7 @@ const seedBricks = [
 const seedDone = {};
 seedCountries.forEach((c, ci) => seedWaves.forEach((w, wi) => seedBricks.forEach((b, bi) => {
   seedDone[`${c.id}|${w.id}|${b.id}`] = (ci + bi + wi * 2) % 3 !== 0;
-}));
+})));
 // brick exclusions: brickId|scopeId(wave or offer) = true means "this brick does NOT apply there"
 const seedBrickExclusions = {};
 
