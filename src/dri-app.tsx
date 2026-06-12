@@ -20,7 +20,7 @@ async function getSupabase() {
     if (_sbTried) return _sb;
     _sbTried = true;
     try {
-        const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
+        const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {} as any;
         if (env.VITE_SUPABASE_URL) {
             const path = "./supabaseClient";
             const mod = await import(/* @vite-ignore */ path);
@@ -102,7 +102,7 @@ const seedBricks = [
 const seedDone = {};
 seedCountries.forEach((c, ci) => seedWaves.forEach((w, wi) => seedBricks.forEach((b, bi) => {
     seedDone[`${c.id}|${w.id}|${b.id}`] = (ci + bi + wi * 2) % 3 !== 0;
-}));
+})));
 // brick exclusions: brickId|scopeId(wave or offer) = true means "this brick does NOT apply there"
 const seedBrickExclusions = {};
 
@@ -132,10 +132,10 @@ const MODULES = [
 const keysTrue = (map) => Object.keys(map || {}).filter((k) => map[k]).map((k) => k.split("|"));
 
 /* ---------- shared UI (all module scope = stable identity = inputs keep focus) ---------- */
-const Card = ({ children, bg = C.white, style }) => (
+const Card = ({ children, bg = C.white, style = {} }: { children: any; bg?: string; style?: any }) => (
     <div className="rounded-xl p-4" style={{ background: bg, border: `1px solid ${C.line}`, ...style }}>{children}</div>
 );
-const Btn = ({ children, onClick, kind = "solid", title, disabled }) => (
+const Btn = ({ children, onClick, kind = "solid", title = "", disabled = false }: { children: any; onClick: any; kind?: string; title?: string; disabled?: boolean }) => (
     <button onClick={onClick} title={title} disabled={disabled}
         className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium focus:outline-none focus:ring-2"
         style={{ background: kind === "solid" ? C.mid : "transparent", color: kind === "solid" ? C.white : C.ink, border: `1px solid ${C.mid}`, opacity: disabled ? 0.5 : 1, cursor: disabled ? "not-allowed" : "pointer" }}>{children}</button>
@@ -152,7 +152,7 @@ const SevBadge = ({ s }) => (
 const Stat = ({ label, value, bg }) => (
     <Card bg={bg}><div className="text-3xl font-bold" style={{ color: C.ink }}>{value}</div><div className="text-sm" style={{ color: C.soft }}>{label}</div></Card>
 );
-const Chip = ({ on, onClick, children, title }) => (
+const Chip = ({ on, onClick, children, title = "" }: { on?: any; onClick?: any; children?: any; title?: string }) => (
     <button onClick={onClick} title={title} aria-pressed={on}
         className="rounded-full px-2 py-0.5 text-xs font-medium focus:outline-none focus:ring-2"
         style={{ background: on ? C.mid : C.white, color: on ? C.white : C.soft, border: `1px solid ${on ? C.mid : C.line}` }}>{children}</button>
@@ -170,7 +170,7 @@ const SaveBar = ({ onSave, state }) => (
 );
 
 // Hoisted out of App so typing in Settings no longer remounts the inputs.
-const SettingsSection = ({ title, items, onAdd, onChange, onDel, extra, bg }) => (
+const SettingsSection = ({ title, items, onAdd, onChange, onDel, extra, bg }: { title: any; items: any; onAdd: any; onChange: any; onDel: any; extra?: any; bg?: any }) => (
     <Card bg={bg} style={{ marginBottom: 12 }}>
         <div className="mb-2 flex items-center justify-between"><h3 className="font-semibold" style={{ color: C.ink }}>{title}</h3><Btn onClick={onAdd}><Plus size={16} /> Add</Btn></div>
         <div className="grid gap-2">
@@ -307,7 +307,7 @@ export default function App() {
     const [offerBU, setOfferBU] = useState(seedOfferBU);
     const [waveCountry, setWaveCountry] = useState(seedWaveCountry);
     const [offerWave, setOfferWave] = useState(seedOfferWave);
-    const [saveState, setSaveState] = useState({ status: "idle" });
+    const [saveState, setSaveState] = useState<{ status: "idle" | "saving" | "saved" | "local" | "error"; at?: string; msg?: string }>({ status: "idle" });
 
     // Module-level state (declared here so the auth guard below sits after all hooks)
     const [m1Wave, setM1Wave] = useState(seedWaves[0]?.id);
@@ -537,10 +537,13 @@ export default function App() {
         const ids = new Set(filtered.map((o) => o.id));
         const edges = [];
         filtered.forEach((o) => (o.blocks || []).forEach((t) => { if (ids.has(t)) edges.push({ from: o.id, to: t }); }));
-        const depth = {}; filtered.forEach((o) => depth[o.id] = 0);
+        const depth = {} as Record<string, number>;
+        filtered.forEach((o) => { depth[o.id] = 0; });
         for (let i = 0; i < filtered.length; i++) edges.forEach((e) => { depth[e.to] = Math.max(depth[e.to], depth[e.from] + 1); });
-        const byDepth = {}; filtered.forEach((o) => { const d = depth[o.id]; (byDepth[d] ||= []).push(o.id); });
-        const pos = {}; Object.keys(byDepth).forEach((d) => byDepth[d].forEach((id, i) => { pos[id] = { x: Number(d), y: i }; }));
+        const byDepth = {} as Record<number, string[]>;
+        filtered.forEach((o) => { const d = depth[o.id]; (byDepth[d] ||= []).push(o.id); });
+        const pos = {} as Record<string, { x: number; y: number }>;
+        Object.keys(byDepth).forEach((d) => byDepth[Number(d)].forEach((id, i) => { pos[id] = { x: Number(d), y: i }; }));
         const colW = 230, rowH = 90, nodeW = 190, nodeH = 56;
         const maxD = Math.max(0, ...filtered.map((o) => depth[o.id]));
         const maxR = Math.max(1, ...Object.values(byDepth).map((a) => a.length));
@@ -784,7 +787,7 @@ export default function App() {
         reader.onload = (ev) => {
             try {
                 const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
-                const sh = (n) => wb.Sheets[n] ? XLSX.utils.sheet_to_json(wb.Sheets[n], { defval: "" }) : [];
+                const sh = (n) => wb.Sheets[n] ? (XLSX.utils.sheet_to_json(wb.Sheets[n], { defval: "" }) as any[]) : [];
                 const str = (x) => String(x ?? "").trim();
                 const yes = (x) => ["yes", "y", "true", "1", "x", "✓"].includes(str(x).toLowerCase());
                 const R = sh("Regions").map((r) => ({ id: str(r.id) || gid(), name: str(r.name) })).filter((r) => r.name);
