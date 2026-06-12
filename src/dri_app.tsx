@@ -208,10 +208,12 @@ const Matrix = ({ title, rows, cols, map, setMap, bg }) => {
             {rows.map((r) => (
               <tr key={r.id}>
                 <td className="py-1 pr-3 font-medium">{r.name}</td>
-                {cols.map((c) => { const k = `${r.id}|${c.id}`; return (
-                  <td key={c.id} className="px-2 py-1 text-center">
-                    <input type="checkbox" checked={!!map[k]} aria-label={`${r.name} – ${c.name}`} onChange={() => setMap({ ...map, [k]: !map[k] })} style={{ width: 16, height: 16, accentColor: C.mid }} />
-                  </td>); })}
+                {cols.map((c) => {
+                  const k = `${r.id}|${c.id}`; return (
+                    <td key={c.id} className="px-2 py-1 text-center">
+                      <input type="checkbox" checked={!!map[k]} aria-label={`${r.name} – ${c.name}`} onChange={() => setMap({ ...map, [k]: !map[k] })} style={{ width: 16, height: 16, accentColor: C.mid }} />
+                    </td>);
+                })}
               </tr>
             ))}
             {!rows.length && <tr><td className="py-1 text-sm" style={{ color: C.soft }}>Nothing to map yet.</td></tr>}
@@ -361,10 +363,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    saveMemory({ user, data: {
-      regions, countries, waves, offers, bus, blocks, bricks, done,
-      brickExcl, obstacles, offerBU, waveCountry, offerWave,
-    } });
+    saveMemory({
+      user, data: {
+        regions, countries, waves, offers, bus, blocks, bricks, done,
+        brickExcl, obstacles, offerBU, waveCountry, offerWave,
+      }
+    });
   }, [user, regions, countries, waves, offers, bus, blocks, bricks, done, brickExcl, obstacles, offerBU, waveCountry, offerWave]);
 
   /* ---------- scope helpers ---------- */
@@ -934,12 +938,14 @@ export default function App() {
         <nav aria-label="Modules" className="flex shrink-0 flex-col p-3 sm:w-60" style={{ background: C.sidebar }}>
           <div className="mb-4 px-2 pt-1"><div className="text-lg font-bold" style={{ color: C.white }}>Transformation</div><div className="text-xs" style={{ color: "#eef3fb" }}>Today: {todayStr()}</div></div>
           <ul className="flex gap-1 sm:flex-col">
-            {MODULES.map(({ id, name, Icon }) => { const on = id === mod; return (
-              <li key={id} className="flex-1">
-                <button onClick={() => setMod(id)} aria-current={on ? "page" : undefined} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium focus:outline-none focus:ring-2" style={{ background: on ? C.white : "transparent", color: on ? C.ink : C.white }}>
-                  <Icon size={18} aria-hidden /> <span className="hidden sm:inline">{name}</span>
-                </button>
-              </li>); })}
+            {MODULES.map(({ id, name, Icon }) => {
+              const on = id === mod; return (
+                <li key={id} className="flex-1">
+                  <button onClick={() => setMod(id)} aria-current={on ? "page" : undefined} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-medium focus:outline-none focus:ring-2" style={{ background: on ? C.white : "transparent", color: on ? C.ink : C.white }}>
+                    <Icon size={18} aria-hidden /> <span className="hidden sm:inline">{name}</span>
+                  </button>
+                </li>);
+            })}
           </ul>
           <div className="mt-auto px-2 pt-4 hidden sm:block">
             <div className="truncate text-xs" style={{ color: "#eef3fb" }}>{user.email}</div>
