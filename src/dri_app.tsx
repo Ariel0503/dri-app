@@ -5,30 +5,34 @@ import * as XLSX from "xlsx";
 
 /* ============================================================================
    SUPABASE PERSISTENCE (optional, repo-only — preview runs in-memory)
-   - This file imports your existing client lazily, ONLY when VITE_SUPABASE_URL
-     is present, so it never breaks the artifact preview.
-   - In your repo, keep src/supabaseClient.js exporting `supabase`
-     (createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)).
+   - This file uses the shared client in src/lib/supabase when VITE_SUPABASE_URL
+     and VITE_SUPABASE_ANON_KEY are configured.
+   - When Supabase is not configured, it falls back to localStorage memory.
    - Run the companion SQL (transformation_schema_additions.sql) once: it adds
      wave_id to brick_checks and creates the brick_exclusions table.
-   - Set LOAD_FROM_DB = false if you want to disable load-on-login while testing.
 ============================================================================ */
 const LOAD_FROM_DB = true;
+const STORAGE_KEY = "dri_app_memory";
+const SUPABASE_ENABLED = Boolean(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
 
-let _sb = null, _sbTried = false;
-async function getSupabase() {
-  if (_sbTried) return _sb;
-  _sbTried = true;
+const loadMemory = () => {
+  if (typeof window === "undefined") return null;
   try {
-    const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {};
-    if (env.VITE_SUPABASE_URL) {
-      const path = "./supabaseClient";
-      const mod = await import(/* @vite-ignore */ path);
-      _sb = mod.supabase || mod.default || null;
-    }
-  } catch { _sb = null; }
-  return _sb;
-}
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const saveMemory = (data) => {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch {
+    // ignore write failures
+  }
+};
 
 /* ---------- palette ---------- */
 const C = {
@@ -261,10 +265,10 @@ function LoginScreen({ onLogin }) {
   const [err, setErr] = useState("");
   const submit = async () => {
     if (!email.trim() || !pw) { setErr("Enter your email and password."); return; }
-    const sb = await getSupabase();
-    if (sb) {
-      const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password: pw });
+    if (SUPABASE_ENABLED) {
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pw });
       if (error) { setErr(error.message); return; }
+      if (!data.session) { setErr("Unable to sign in."); return; }
     }
     onLogin(email.trim());
   };
@@ -323,6 +327,46 @@ export default function App() {
   const chartRef = useRef(null);
   const [importMsg, setImportMsg] = useState("");
 
+  useEffect(() => {
+    if (SUPABASE_ENABLED) {
+      let subscription = null;
+      const init = async () => {
+        const { data, error } = await supabase.auth.getSession();
+        if (!error && data.session?.user?.email) setUser({ email: data.session.user.email });
+        const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+          setUser(session?.user ? { email: session.user.email } : null);
+        });
+        subscription = authListener?.subscription;
+      };
+      init();
+      return () => { subscription?.unsubscribe?.(); };
+    }
+    const memory = loadMemory();
+    if (memory?.user?.email) setUser({ email: memory.user.email });
+    if (memory?.data) {
+      setRegions(memory.data.regions || seedRegions);
+      setCountries(memory.data.countries || seedCountries);
+      setWaves(memory.data.waves || seedWaves);
+      setOffers(memory.data.offers || seedOffers);
+      setBUs(memory.data.bus || seedBUs);
+      setBlocks(memory.data.blocks || seedBlocks);
+      setBricks(memory.data.bricks || seedBricks);
+      setDone(memory.data.done || seedDone);
+      setBrickExcl(memory.data.brickExcl || seedBrickExclusions);
+      setObstacles(memory.data.obstacles || seedObstacles);
+      setOfferBU(memory.data.offerBU || seedOfferBU);
+      setWaveCountry(memory.data.waveCountry || seedWaveCountry);
+      setOfferWave(memory.data.offerWave || seedOfferWave);
+    }
+  }, []);
+
+  useEffect(() => {
+    saveMemory({ user, data: {
+      regions, countries, waves, offers, bus, blocks, bricks, done,
+      brickExcl, obstacles, offerBU, waveCountry, offerWave,
+    } });
+  }, [user, regions, countries, waves, offers, bus, blocks, bricks, done, brickExcl, obstacles, offerBU, waveCountry, offerWave]);
+
   /* ---------- scope helpers ---------- */
   // A block applies to a (country, wave) context based on its level + scope
   const blockApplies = (bl, cid, wid) => {
@@ -365,7 +409,7 @@ export default function App() {
   /* ======================= PERSISTENCE ======================= */
   const saveAll = async () => {
     setSaveState({ status: "saving" });
-    const sb = await getSupabase();
+    const sb = SUPABASE_ENABLED ? supabase : null;
     if (!sb) { setSaveState({ status: "local" }); return; }
     try {
       const all = async (t, rows) => { if (rows.length) { const { error } = await sb.from(t).upsert(rows); if (error) throw new Error(`${t}: ${error.message}`); } };
@@ -398,7 +442,7 @@ export default function App() {
   };
 
   const loadAll = async () => {
-    const sb = await getSupabase(); if (!sb) return;
+    const sb = SUPABASE_ENABLED ? supabase : null; if (!sb) return;
     try {
       const g = async (t) => { const { data, error } = await sb.from(t).select("*"); if (error) throw error; return data || []; };
       const R = await g("regions"); if (!R.length) return; // empty DB -> keep seeds
@@ -877,7 +921,12 @@ export default function App() {
 
   const active = MODULES.find((m) => m.id === mod);
   const body = { m1: renderM1, m2: renderM2, m3: renderM3, m4: renderM4, m5: renderM5 }[mod];
-  const signOut = async () => { const sb = await getSupabase(); if (sb) { try { await sb.auth.signOut(); } catch { /* ignore */ } } setUser(null); };
+  const signOut = async () => {
+    if (SUPABASE_ENABLED) {
+      try { await supabase.auth.signOut(); } catch { /* ignore */ }
+    }
+    setUser(null);
+  };
 
   return (
     <div className="min-h-screen w-full" style={{ background: "#f4f7fc", color: C.ink, fontFamily: "system-ui, sans-serif" }}>
