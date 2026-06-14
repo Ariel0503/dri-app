@@ -20,8 +20,8 @@ async function getSupabase() {
     if (_sbTried) return _sb;
     _sbTried = true;
     try {
-        const env.production = (typeof import.meta !== "undefined" && import.meta.env.PROD) ? import.meta.env.PROD : {} as any;
-        if (env.production.VITE_SUPABASE_URL) {
+        const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {} as any;
+        if (env.VITE_SUPABASE_URL) {
             const path = "./supabaseClient";
             const mod = await import(/* @vite-ignore */ path);
             _sb = mod.supabase || mod.default || null;
@@ -42,6 +42,7 @@ const C = {
 const pad = (n) => String(n).padStart(2, "0");
 const todayStr = () => { const d = new Date(); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; };
 const validDate = (s) => /^\d{2}\/\d{2}\/\d{4}$/.test(s || "");
+const isUUID = (s) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || ""));
 const toISODate = (s) => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s || ""); return m ? `${m[3]}-${m[2]}-${m[1]}` : null; };
 const fromISO = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s || ""); return m ? `${m[3]}/${m[2]}/${m[1]}` : ""; };
 // Normalises anything Excel hands us (Date object, serial number, ISO, d/m/yyyy) to dd/mm/yyyy.
@@ -267,8 +268,12 @@ function LoginScreen({ onLogin }) {
         if (sb) {
             const { error } = await sb.auth.signInWithPassword({ email: email.trim(), password: pw });
             if (error) { setErr(error.message); return; }
+            let id = null;
+            try { const { data } = await sb.auth.getUser(); id = data?.user?.id || null; } catch { /* ignore */ }
+            onLogin({ email: email.trim(), id });
+            return;
         }
-        onLogin(email.trim());
+        onLogin({ email: email.trim(), id: null });
     };
     return (
         <div className="flex min-h-screen w-full items-center justify-center p-4" style={{ background: "#f4f7fc", fontFamily: "system-ui, sans-serif" }}>
@@ -364,40 +369,55 @@ export default function App() {
     const setCountryAll = (cid, wid, val) => { const n = { ...done }; countryBrickKeys(cid, wid).forEach((k) => { n[k] = val; }); setDone(n); };
     const setWaveAll = (wid, val) => { const n = { ...done }; countriesOfWave(wid).forEach((c) => countryBrickKeys(c.id, wid).forEach((k) => { n[k] = val; })); setDone(n); };
 
-    /* ======================= PERSISTENCE ======================= */
-    const saveAll = async () => {
+    /* ======================= PERSISTENCE =======================
+       persist(d, userId) writes an explicit data snapshot to Supabase. Taking the
+       data as an argument (rather than reading component state) lets the Excel
+       import write straight to the DB with the freshly-parsed rows, without
+       waiting a render for setState to apply.
+       userId, when a valid UUID, is stamped onto brick_checks.updated_by so each
+       imported/saved check is attributed to a user (the auth user id, or the
+       Meta sheet's user_id — see the import + template below). */
+    const snapshot = () => ({ regions, countries, waves, offers, bus, blocks, bricks, done, brickExcl, obstacles, offerBU, waveCountry, offerWave });
+
+    const persist = async (d, userId) => {
         setSaveState({ status: "saving" });
         const sb = await getSupabase();
-        if (!sb) { setSaveState({ status: "local" }); return; }
+        if (!sb) { setSaveState({ status: "local" }); return false; }
         try {
             const all = async (t, rows) => { if (rows.length) { const { error } = await sb.from(t).upsert(rows); if (error) throw new Error(`${t}: ${error.message}`); } };
             const replace = async (t, rows, col) => {
                 const { error: de } = await sb.from(t).delete().not(col, "is", null); if (de) throw new Error(`${t} (clear): ${de.message}`);
                 if (rows.length) { const { error } = await sb.from(t).insert(rows); if (error) throw new Error(`${t}: ${error.message}`); }
             };
-            await all("regions", regions.map((r, i) => ({ id: r.id, name: r.name, sort_order: i })));
-            await all("countries", countries.map((c) => ({ id: c.id, name: c.name, region_id: c.regionId })));
-            await all("waves", waves.map((w, i) => ({ id: w.id, name: w.name, deadline: toISODate(w.deadline), sort_order: i })));
-            await all("offers", offers.map((o) => ({ id: o.id, name: o.name })));
-            await all("business_units", bus.map((b, i) => ({ id: b.id, name: b.name, sort_order: i })));
-            await all("blocks", blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })));
-            await all("bricks", bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })));
-            await replace("offer_business_units", keysTrue(offerBU).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), "offer_id");
-            await replace("wave_countries", keysTrue(waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), "wave_id");
-            await replace("offer_waves", keysTrue(offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), "offer_id");
-            await replace("block_assignments", blocks.filter((b) => b.scope && b.scope !== "all").map((b) => b.level === "offer" ? { block_id: b.id, offer_id: b.scope } : { block_id: b.id, wave_id: b.scope }), "block_id");
-            await replace("brick_exclusions", keysTrue(brickExcl).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), "brick_id");
-            // brick_checks requires a wave_id column — see companion SQL.
-            const bcRows = Object.entries(done).map(([k, v]) => { const [country_id, wave_id, brick_id] = k.split("|"); return { country_id, wave_id, brick_id, checked: !!v }; });
+            await all("regions", d.regions.map((r, i) => ({ id: r.id, name: r.name, sort_order: i })));
+            await all("countries", d.countries.map((c) => ({ id: c.id, name: c.name, region_id: c.regionId })));
+            await all("waves", d.waves.map((w, i) => ({ id: w.id, name: w.name, deadline: toISODate(w.deadline), sort_order: i })));
+            await all("offers", d.offers.map((o) => ({ id: o.id, name: o.name })));
+            await all("business_units", d.bus.map((b, i) => ({ id: b.id, name: b.name, sort_order: i })));
+            await all("blocks", d.blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })));
+            await all("bricks", d.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })));
+            await replace("offer_business_units", keysTrue(d.offerBU).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), "offer_id");
+            await replace("wave_countries", keysTrue(d.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), "wave_id");
+            await replace("offer_waves", keysTrue(d.offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), "offer_id");
+            await replace("block_assignments", d.blocks.filter((b) => b.scope && b.scope !== "all").map((b) => b.level === "offer" ? { block_id: b.id, offer_id: b.scope } : { block_id: b.id, wave_id: b.scope }), "block_id");
+            await replace("brick_exclusions", keysTrue(d.brickExcl).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), "brick_id");
+            // brick_checks requires a wave_id column — see companion SQL. updated_by
+            // is attributed to userId when it is a valid UUID (a real profiles.id).
+            const stamp = isUUID(userId) ? { updated_by: userId } : {};
+            const bcRows = Object.entries(d.done).map(([k, v]) => { const [country_id, wave_id, brick_id] = k.split("|"); return { country_id, wave_id, brick_id, checked: !!v, ...stamp }; });
             await replace("brick_checks", bcRows, "country_id");
-            await all("obstacles", obstacles.map((o) => ({ id: o.id, title: o.title, owner: o.owner, severity: sevToDb(o.severity), resolution: o.resolution, status: "open" })));
-            await replace("obstacle_countries", obstacles.filter((o) => o.countryId).map((o) => ({ obstacle_id: o.id, country_id: o.countryId })), "obstacle_id");
-            await replace("obstacle_waves", obstacles.filter((o) => o.waveId).map((o) => ({ obstacle_id: o.id, wave_id: o.waveId })), "obstacle_id");
-            await replace("obstacle_impacts", obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ obstacle_id: o.id, blocked_obstacle_id: b }))), "obstacle_id");
-            await replace("obstacle_blocks", obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ obstacle_id: o.id, block_id: b }))), "obstacle_id");
+            await all("obstacles", d.obstacles.map((o) => ({ id: o.id, title: o.title, owner: o.owner, severity: sevToDb(o.severity), resolution: o.resolution, status: "open" })));
+            await replace("obstacle_countries", d.obstacles.filter((o) => o.countryId).map((o) => ({ obstacle_id: o.id, country_id: o.countryId })), "obstacle_id");
+            await replace("obstacle_waves", d.obstacles.filter((o) => o.waveId).map((o) => ({ obstacle_id: o.id, wave_id: o.waveId })), "obstacle_id");
+            await replace("obstacle_impacts", d.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ obstacle_id: o.id, blocked_obstacle_id: b }))), "obstacle_id");
+            await replace("obstacle_blocks", d.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ obstacle_id: o.id, block_id: b }))), "obstacle_id");
             setSaveState({ status: "saved", at: `${todayStr()} ${new Date().toLocaleTimeString()}` });
-        } catch (e) { setSaveState({ status: "error", msg: e.message || String(e) }); }
+            return true;
+        } catch (e) { setSaveState({ status: "error", msg: e.message || String(e) }); return false; }
     };
+
+    // Save button on every module page -> writes current in-memory state, attributed to the signed-in user.
+    const saveAll = () => persist(snapshot(), user?.id);
 
     const loadAll = async () => {
         const sb = await getSupabase(); if (!sb) return;
@@ -769,6 +789,9 @@ export default function App() {
     /* ======================= MODULE 5 — Settings ======================= */
     const downloadTemplate = () => {
         const wb = XLSX.utils.book_new(), add = (n, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), n);
+        // Meta carries the user id used to attribute imported brick checks (updated_by).
+        // Prefilled with the signed-in user's id when known; leave it to use the importer's id.
+        add("Meta", [{ user_id: user?.id || "PASTE-YOUR-SUPABASE-AUTH-USER-ID" }]);
         add("Regions", [{ name: "EMEA" }]); add("Countries", [{ name: "France", region: "EMEA" }]);
         add("Waves", [{ name: "Wave 1", deadline: "30/09/2026" }]); add("Offers", [{ name: "Core Platform" }]);
         add("BusinessUnits", [{ name: "Retail" }]); add("Blocks", [{ name: "Data migration", weight: 30, level: "wave", scope: "all" }]);
@@ -784,7 +807,7 @@ export default function App() {
     const onImport = (e) => {
         const file = e.target.files?.[0]; if (!file) return;
         const reader = new FileReader();
-        reader.onload = (ev) => {
+        reader.onload = async (ev) => {
             try {
                 const wb = XLSX.read(ev.target.result, { type: "array", cellDates: true });
                 const sh = (n) => wb.Sheets[n] ? (XLSX.utils.sheet_to_json(wb.Sheets[n], { defval: "" }) as any[]) : [];
@@ -815,6 +838,10 @@ export default function App() {
                 const obuMap = {}; sh("OfferBUs").forEach((r) => { const o = ofBy[str(r.offer).toLowerCase()], b = buBy[str(r.bu).toLowerCase()]; if (o && b && yes(r.selected)) obuMap[`${o}|${b}`] = true; });
                 const owMap = {}; sh("OfferWaves").forEach((r) => { const o = ofBy[str(r.offer).toLowerCase()], w = wBy[str(r.wave).toLowerCase()]; if (o && w && yes(r.selected)) owMap[`${o}|${w}`] = true; });
                 const doneMap = {}; sh("BrickChecks").forEach((r) => { const c = cBy[str(r.country).toLowerCase()], w = wBy[str(r.wave).toLowerCase()], b = bkBy[str(r.brick).toLowerCase()]; if (c && w && b) doneMap[`${c}|${w}|${b}`] = yes(r.checked); });
+                // Meta: user id used to attribute the imported brick checks. A valid UUID
+                // from the sheet wins; otherwise we fall back to the signed-in user's id.
+                const meta = sh("Meta")[0] || {};
+                const resolvedUserId = isUUID(str(meta.user_id)) ? str(meta.user_id) : (user?.id || null);
 
                 const parts = [];
                 if (R.length) { setRegions(R); parts.push(`${R.length} regions`); }
@@ -831,7 +858,35 @@ export default function App() {
                 if (Object.keys(doneMap).length) { setDone(doneMap); parts.push(`${Object.keys(doneMap).length} brick checks`); }
                 else if (Bk.length) { setDone({}); } // bricks changed but no checks provided -> reset
 
-                setImportMsg(parts.length ? `Imported: ${parts.join(", ")}. Click Save to push to the database.` : "No recognised sheets found. Use the template’s sheet names.");
+                if (!parts.length) { setImportMsg("No recognised sheets found. Use the template’s sheet names."); e.target.value = ""; return; }
+
+                // Production: write the parsed rows straight to the DB tables (don't wait for
+                // setState). Preview (no VITE_SUPABASE_URL): keep it in-memory.
+                const snap = {
+                    regions: R.length ? R : regions,
+                    countries: Cn.length ? Cn : countries,
+                    waves: W.length ? W : waves,
+                    offers: Of.length ? Of : offers,
+                    bus: Bu.length ? Bu : bus,
+                    blocks: Bl.length ? Bl : blocks,
+                    bricks: Bk.length ? Bk : bricks,
+                    done: Object.keys(doneMap).length ? doneMap : (Bk.length ? {} : done),
+                    brickExcl,
+                    obstacles: Ob.length ? Ob : obstacles,
+                    offerBU: Object.keys(obuMap).length ? obuMap : offerBU,
+                    waveCountry: Object.keys(wcMap).length ? wcMap : waveCountry,
+                    offerWave: Object.keys(owMap).length ? owMap : offerWave,
+                };
+                const sb = await getSupabase();
+                if (sb) {
+                    setImportMsg(`Imported: ${parts.join(", ")}. Writing to the database…`);
+                    const ok = await persist(snap, resolvedUserId);
+                    setImportMsg(ok
+                        ? `Imported and written to the database: ${parts.join(", ")}.`
+                        : `Imported into the app, but the database write failed — see the Save status above.`);
+                } else {
+                    setImportMsg(`Imported (preview): ${parts.join(", ")}. Set VITE_SUPABASE_URL in your repo to write these straight to the database.`);
+                }
             } catch (err) { setImportMsg("Could not read the file: " + err.message); }
             e.target.value = "";
         };
@@ -844,7 +899,7 @@ export default function App() {
 
             <Card bg={C.yellow} style={{ marginBottom: 16 }}>
                 <h3 className="mb-1 font-semibold" style={{ color: C.ink }}>Data import (Excel)</h3>
-                <p className="mb-3 text-sm" style={{ color: C.soft }}>Upload an .xlsx with sheets: Regions, Countries, Waves, Offers, BusinessUnits, Blocks, Bricks, Obstacles, plus the checkbox sheets <b>WaveCountries</b>, <b>OfferBUs</b>, <b>OfferWaves</b> and <b>BrickChecks</b> (each with a yes/no column). Dates in any common format are normalised to dd/mm/yyyy. Importing replaces matching data.</p>
+                <p className="mb-3 text-sm" style={{ color: C.soft }}>Upload an .xlsx with sheets: <b>Meta</b> (a single <code>user_id</code> cell), Regions, Countries, Waves, Offers, BusinessUnits, Blocks, Bricks, Obstacles, plus the checkbox sheets <b>WaveCountries</b>, <b>OfferBUs</b>, <b>OfferWaves</b> and <b>BrickChecks</b> (each with a yes/no column). Dates in any common format are normalised to dd/mm/yyyy. With Supabase configured, the import <b>writes straight to the database</b> (no separate Save needed) and stamps the <code>Meta.user_id</code> — or, if that cell is blank, your signed-in id — onto each brick check. In preview it stays in this session. Importing replaces matching data.</p>
                 <div className="flex flex-wrap items-center gap-2">
                     <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium" style={{ background: C.mid, color: C.white, border: `1px solid ${C.mid}` }}>
                         <Upload size={16} /> Choose Excel file
@@ -878,7 +933,7 @@ export default function App() {
     );
 
     /* ======================= shell ======================= */
-    if (!user) return <LoginScreen onLogin={(email) => setUser({ email, role: "admin" })} />;
+    if (!user) return <LoginScreen onLogin={(u) => setUser({ email: u.email, id: u.id || null, role: "admin" })} />;
 
     const active = MODULES.find((m) => m.id === mod);
     const body = { m1: renderM1, m2: renderM2, m3: renderM3, m4: renderM4, m5: renderM5 }[mod];
