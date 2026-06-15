@@ -23,7 +23,6 @@ async function getSupabase() {
         const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {} as any;
         if (env.VITE_SUPABASE_URL) {
             const url = "./supabaseClient";
-            const key = env.production?.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
             const mod = await import(/* @vite-ignore */ url);
             _sb = mod.supabase || mod.default || null;
         }
