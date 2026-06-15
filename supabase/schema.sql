@@ -263,3 +263,50 @@ drop policy if exists "editor_write" on brick_exclusions;
 create policy "auth_read"   on brick_exclusions for select to authenticated using (true);
 create policy "editor_write" on brick_exclusions for all to authenticated
   using (public.can_write()) with check (public.can_write());
+-- ============================================================================
+--  TRANSFORMATION READINESS — RLS WRITE-POLICY FIX
+--  Run AFTER the main schema. Safe to run multiple times (idempotent).
+--
+--  Why: the main schema creates the write policy with
+--       `for insert, update, delete` — Postgres CREATE POLICY accepts only ONE
+--       command (ALL | SELECT | INSERT | UPDATE | DELETE), so that statement
+--       errors and the editor_write policy is never created. With RLS enabled
+--       and only a select policy present, ALL writes (Save AND Excel import)
+--       are denied by default. This recreates the policy correctly as `for all`.
+--
+--  Reads stay open to any signed-in user (auth_read). Writes require can_write()
+--  (admin/editor). can_write() is SECURITY DEFINER, so it bypasses RLS and does
+--  NOT cause recursion when referenced inside these policies.
+-- ============================================================================
+
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'programme','regions','countries','waves','offers','business_units',
+    'offer_business_units','wave_countries','offer_waves',
+    'wave_assignments','wave_assignment_deliveries',
+    'dependencies','blocks','bricks','block_assignments','brick_checks',
+    'obstacles','obstacle_countries','obstacle_waves','obstacle_impacts','obstacle_blocks'
+  ] loop
+    -- read: any authenticated user
+    execute format('drop policy if exists "auth_read" on %I;', t);
+    execute format('create policy "auth_read" on %I for select to authenticated using (true);', t);
+
+    -- write: admin/editor only. `for all` covers insert/update/delete in one
+    -- valid policy; using() gates update/delete rows, with check() gates
+    -- inserted/updated rows. Both are can_write(), so a viewer is blocked at the
+    -- DELETE too (important: the import's delete-then-insert replace can't wipe a
+    -- table for a viewer, because the delete itself is denied).
+    execute format('drop policy if exists "editor_write" on %I;', t);
+    execute format(
+      'create policy "editor_write" on %I for all to authenticated
+         using (public.can_write()) with check (public.can_write());', t);
+  end loop;
+end $$;
+
+-- ----------------------------------------------------------------------------
+-- Verify (optional): one editor_write row per table above.
+--   select tablename, policyname, cmd from pg_policies
+--   where schemaname = 'public' order by tablename, policyname;
+-- ----------------------------------------------------------------------------
