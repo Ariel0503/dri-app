@@ -2,22 +2,37 @@ import { useState, useRef, useEffect } from "react";
 import { Gauge, AlertTriangle, Layers, FileBarChart, Settings as Cog, ChevronDown, ChevronRight, Plus, Trash2, Download, Calendar, GitBranch, List, Upload, FileDown, CheckSquare, Square, Save, LogOut, Lock, Pencil, CheckCheck, Eraser } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import * as XLSX from "xlsx";
-import { supabase } from "./lib/supabase";
 
 /* ============================================================================
    SUPABASE PERSISTENCE
-   - Direct static import of supabase client works in both dev and prod builds
-   - The client is created with VITE_SUPABASE_URL set at build time
-   - If env vars are missing, all DB operations fail gracefully
+   - Static import of supabaseClient works in both dev and prod builds
+   - The client initializes when VITE_SUPABASE_URL is configured in build env
+   - If not configured, app falls back to in-memory storage
    - Run the companion SQL (transformation_schema_additions.sql) once: it adds
      wave_id to brick_checks and creates the brick_exclusions table.
    - Set LOAD_FROM_DB = false if you want to disable load-on-login while testing.
 ============================================================================ */
 const LOAD_FROM_DB = true;
 
+let _sb: any = null;
+try {
+    // Static import: works correctly in both dev and prod builds
+    // If VITE_SUPABASE_URL is not set during build, supabaseClient will be null
+    _sb = (async () => {
+        try {
+            const mod = await import("./supabaseClient");
+            return mod.supabase || mod.default || null;
+        } catch {
+            return null;
+        }
+    })();
+} catch {
+    _sb = null;
+}
+
 function getSupabase() {
-    // Return the supabase client if URL is configured, otherwise null
-    return (supabase && supabase.rest) ? supabase : null;
+    // Return the promise (callers await it) or null if not available
+    return _sb;
 }
 
 /* ---------- palette ---------- */
