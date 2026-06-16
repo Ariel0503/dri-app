@@ -310,3 +310,74 @@ end $$;
 --   select tablename, policyname, cmd from pg_policies
 --   where schemaname = 'public' order by tablename, policyname;
 -- ----------------------------------------------------------------------------
+
+
+-- brick_exclusions
+grant select, insert, update, delete on table public.brick_exclusions to authenticated;
+alter table public.brick_exclusions enable row level security;
+
+-- App write (insert/update/delete) for authenticated users
+drop policy if exists brick_exclusions_app_write on public.brick_exclusions;
+create policy brick_exclusions_app_write
+on public.brick_exclusions
+for all
+to authenticated
+using (can_write())
+with check (can_write());
+
+-- Excel import write (allow import writes as authenticated)
+drop policy if exists brick_exclusions_excel_import_write on public.brick_exclusions;
+create policy brick_exclusions_excel_import_write
+on public.brick_exclusions
+for all
+to authenticated
+using (true)
+with check (true);
+
+
+
+-- offer_business_units
+grant select, insert, update, delete on table public.offer_business_units to authenticated;
+alter table public.offer_business_units enable row level security;
+
+-- App write
+drop policy if exists offer_business_units_app_write on public.offer_business_units;
+create policy offer_business_units_app_write
+on public.offer_business_units
+for all
+to authenticated
+using (can_write())
+with check (can_write());
+
+-- Excel import write
+drop policy if exists offer_business_units_excel_import_write on public.offer_business_units;
+create policy offer_business_units_excel_import_write
+on public.offer_business_units
+for all
+to authenticated
+using (true)
+with check (true);
+
+
+
+-- wave_assignment_deliveries
+grant select, insert, update, delete on table public.wave_assignment_deliveries to authenticated;
+alter table public.wave_assignment_deliveries enable row level security;
+
+-- App write
+drop policy if exists wave_assignment_deliveries_app_write on public.wave_assignment_deliveries;
+create policy wave_assignment_deliveries_app_write
+on public.wave_assignment_deliveries
+for all
+to authenticated
+using (can_write())
+with check (can_write());
+
+-- Excel import write
+drop policy if exists wave_assignment_deliveries_excel_import_write on public.wave_assignment_deliveries;
+create policy wave_assignment_deliveries_excel_import_write
+on public.wave_assignment_deliveries
+for all
+to authenticated
+using (true)
+with check (true);
