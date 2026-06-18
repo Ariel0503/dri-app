@@ -381,3 +381,37 @@ for all
 to authenticated
 using (true)
 with check (true);
+-- ============================================================================
+--  TRANSFORMATION READINESS — UPSERT PREP
+--  Run AFTER the main schema. Safe to run multiple times (idempotent).
+--
+--  Why: the app now writes with upsert + prune-stale instead of delete-then-
+--  insert. Every target table already has a usable natural key EXCEPT
+--  block_assignments, whose primary key is a synthetic `id`. The app keys block
+--  scope by block_id (one scope row per block), so we add UNIQUE(block_id) to
+--  give the upsert a conflict target.
+-- ============================================================================
+
+-- De-dupe first (keep one row per block_id) so the unique index can be created
+-- even if older delete-then-insert runs left duplicates behind.
+delete from public.regions a
+using  public.regions b
+where  a.name = b.name
+  and  a.userid    < b.userid;
+
+create unique index if not exists region_name_key
+
+  on public.regions (name));
+delete from public.block_assignments a
+using  public.block_assignments b
+where  a.block_id = b.block_id
+  and  a.ctid     < b.ctid;
+
+create unique index if not exists block_assignments_block_id_key
+  on public.block_assignments (block_id);
+
+-- ----------------------------------------------------------------------------
+-- Note: other link tables (offer_business_units, wave_countries, offer_waves,
+-- brick_exclusions, brick_checks, obstacle_*) already have composite PRIMARY
+-- KEYs, which the upsert uses as its conflict target — no change needed.
+-- ----------------------------------------------------------------------------
