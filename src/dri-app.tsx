@@ -4,34 +4,29 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import * as XLSX from "xlsx";
 
 /* ============================================================================
-   SUPABASE PERSISTENCE
-   - Static import of supabaseClient works in both dev and prod builds
-   - The client initializes when VITE_SUPABASE_URL is configured in build env
-   - If not configured, app falls back to in-memory storage
+   SUPABASE PERSISTENCE (optional, repo-only — preview runs in-memory)
+   - This file imports your existing client lazily, ONLY when VITE_SUPABASE_URL
+     is present, so it never breaks the artifact preview.
+   - In your repo, keep src/supabaseClient.js exporting `supabase`
+     (createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)).
    - Run the companion SQL (transformation_schema_additions.sql) once: it adds
      wave_id to brick_checks and creates the brick_exclusions table.
    - Set LOAD_FROM_DB = false if you want to disable load-on-login while testing.
 ============================================================================ */
 const LOAD_FROM_DB = true;
 
-let _sb: any = null;
-try {
-    // Static import: works correctly in both dev and prod builds
-    // If VITE_SUPABASE_URL is not set during build, supabaseClient will be null
-    _sb = (async () => {
-        try {
-            const mod = await import("./supabaseClient");
-            return mod.supabase || mod.default || null;
-        } catch {
-            return null;
+let _sb = null, _sbTried = false;
+async function getSupabase() {
+    if (_sbTried) return _sb;
+    _sbTried = true;
+    try {
+        const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {} as any;
+        if (env.VITE_SUPABASE_URL) {
+            const path = "./supabaseClient";
+            const mod = await import(/* @vite-ignore */ path);
+            _sb = mod.supabase || mod.default || null;
         }
-    })();
-} catch {
-    _sb = null;
-}
-
-function getSupabase() {
-    // Return the promise (callers await it) or null if not available
+    } catch { _sb = null; }
     return _sb;
 }
 
