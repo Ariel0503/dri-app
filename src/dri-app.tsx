@@ -384,33 +384,74 @@ export default function App() {
         const sb = await getSupabase();
         if (!sb) { setSaveState({ status: "local" }); return false; }
         try {
-            const all = async (t, rows) => { if (rows.length) { const { error } = await sb.from(t).upsert(rows); if (error) throw new Error(`${t}: ${error.message}`); } };
-            const replace = async (t, rows, col) => {
-                const { error: de } = await sb.from(t).delete().not(col, "is", null); if (de) throw new Error(`${t} (clear): ${de.message}`);
-                if (rows.length) { const { error } = await sb.from(t).insert(rows); if (error) throw new Error(`${t}: ${error.message}`); }
+            // sync(): upsert the desired rows FIRST, then delete only the rows that
+            // are no longer present. Upserting first means a mid-way failure can
+            // leave EXTRA rows at worst — it can never empty a table, which the old
+            // delete-then-insert could. keyCols is the natural key (the conflict
+            // target). merge=false -> insert-or-ignore (link tables hold only their
+            // key); merge=true -> also update non-key columns (entities, scopes,
+            // brick_checks). Prune reads the existing keys (paged) and removes the
+            // ones not in the desired set; cascades clean up dependent rows.
+            const sync = async (t, rows, keyCols, merge = true) => {
+                if (rows.length) {
+                    const { error } = await sb.from(t).upsert(rows, { onConflict: keyCols.join(","), ignoreDuplicates: !merge });
+                    if (error) throw new Error(`${t}: ${error.message}`);
+                }
+                const sel = keyCols.join(","), existing = [];
+                for (let from = 0; ; from += 1000) {
+                    const { data, error } = await sb.from(t).select(sel).range(from, from + 999);
+                    if (error) throw new Error(`${t} (read): ${error.message}`);
+                    existing.push(...(data || []));
+                    if (!data || data.length < 1000) break;
+                }
+                const keyOf = (r) => keyCols.map((c) => String(r[c])).join("\u0001");
+                const want = new Set(rows.map(keyOf));
+                for (const r of existing) {
+                    if (want.has(keyOf(r))) continue;
+                    let q = sb.from(t).delete();
+                    keyCols.forEach((c) => { q = q.eq(c, r[c]); });
+                    const { error: de } = await q; if (de) throw new Error(`${t} (prune): ${de.message}`);
+                }
             };
-            await all("regions", d.regions.map((r, i) => ({ id: r.id, name: r.name, sort_order: i })));
-            await all("countries", d.countries.map((c) => ({ id: c.id, name: c.name, region_id: c.regionId })));
-            await all("waves", d.waves.map((w, i) => ({ id: w.id, name: w.name, deadline: toISODate(w.deadline), sort_order: i })));
-            await all("offers", d.offers.map((o) => ({ id: o.id, name: o.name })));
-            await all("business_units", d.bus.map((b, i) => ({ id: b.id, name: b.name, sort_order: i })));
-            await all("blocks", d.blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })));
-            await all("bricks", d.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })));
-            await replace("offer_business_units", keysTrue(d.offerBU).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), "offer_id");
-            await replace("wave_countries", keysTrue(d.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), "wave_id");
-            await replace("offer_waves", keysTrue(d.offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), "offer_id");
-            await replace("block_assignments", d.blocks.filter((b) => b.scope && b.scope !== "all").map((b) => b.level === "offer" ? { block_id: b.id, offer_id: b.scope } : { block_id: b.id, wave_id: b.scope }), "block_id");
-            await replace("brick_exclusions", keysTrue(d.brickExcl).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), "brick_id");
-            // brick_checks requires a wave_id column — see companion SQL. updated_by
-            // is attributed to userId when it is a valid UUID (a real profiles.id).
+
+            // --- entities (keyed by id; parents before children for FKs) --------
+            await sync("regions", d.regions.map((r, i) => ({ id: r.id, name: r.name, sort_order: i })), ["id"]);
+            await sync("countries", d.countries.map((c) => ({ id: c.id, name: c.name, region_id: c.regionId })), ["id"]);
+            await sync("waves", d.waves.map((w, i) => ({ id: w.id, name: w.name, deadline: toISODate(w.deadline), sort_order: i })), ["id"]);
+            await sync("offers", d.offers.map((o) => ({ id: o.id, name: o.name })), ["id"]);
+            await sync("business_units", d.bus.map((b, i) => ({ id: b.id, name: b.name, sort_order: i })), ["id"]);
+            await sync("blocks", d.blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })), ["id"]);
+            await sync("bricks", d.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })), ["id"]);
+
+            // block scope: one row per scoped block. Needs UNIQUE(block_id) — see
+            // transformation_upsert_prep.sql. Both columns are written so a
+            // wave<->offer scope switch still satisfies the (wave XOR offer) check.
+            await sync("block_assignments",
+                d.blocks.filter((b) => b.scope && b.scope !== "all").map((b) => b.level === "offer"
+                    ? { block_id: b.id, wave_id: null, offer_id: b.scope }
+                    : { block_id: b.id, wave_id: b.scope, offer_id: null }),
+                ["block_id"]);
+
+            // --- link tables (presence only -> insert-or-ignore, prune removals) -
+            await sync("offer_business_units", keysTrue(d.offerBU).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
+            await sync("wave_countries", keysTrue(d.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
+            await sync("offer_waves", keysTrue(d.offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
+            await sync("brick_exclusions", keysTrue(d.brickExcl).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
+
+            // brick_checks: per (country, wave, brick). updated_by is stamped when
+            // userId is a valid UUID (a real profiles.id). merge so checked +
+            // updated_by update in place rather than churning rows.
             const stamp = isUUID(userId) ? { updated_by: userId } : {};
             const bcRows = Object.entries(d.done).map(([k, v]) => { const [country_id, wave_id, brick_id] = k.split("|"); return { country_id, wave_id, brick_id, checked: !!v, ...stamp }; });
-            await replace("brick_checks", bcRows, "country_id");
-            await all("obstacles", d.obstacles.map((o) => ({ id: o.id, title: o.title, owner: o.owner, severity: sevToDb(o.severity), resolution: o.resolution, status: "open" })));
-            await replace("obstacle_countries", d.obstacles.filter((o) => o.countryId).map((o) => ({ obstacle_id: o.id, country_id: o.countryId })), "obstacle_id");
-            await replace("obstacle_waves", d.obstacles.filter((o) => o.waveId).map((o) => ({ obstacle_id: o.id, wave_id: o.waveId })), "obstacle_id");
-            await replace("obstacle_impacts", d.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ obstacle_id: o.id, blocked_obstacle_id: b }))), "obstacle_id");
-            await replace("obstacle_blocks", d.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ obstacle_id: o.id, block_id: b }))), "obstacle_id");
+            await sync("brick_checks", bcRows, ["country_id", "wave_id", "brick_id"], true);
+
+            // --- obstacles + their link tables ----------------------------------
+            await sync("obstacles", d.obstacles.map((o) => ({ id: o.id, title: o.title, owner: o.owner, severity: sevToDb(o.severity), resolution: o.resolution, status: "open" })), ["id"]);
+            await sync("obstacle_countries", d.obstacles.filter((o) => o.countryId).map((o) => ({ obstacle_id: o.id, country_id: o.countryId })), ["obstacle_id", "country_id"], false);
+            await sync("obstacle_waves", d.obstacles.filter((o) => o.waveId).map((o) => ({ obstacle_id: o.id, wave_id: o.waveId })), ["obstacle_id", "wave_id"], false);
+            await sync("obstacle_impacts", d.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ obstacle_id: o.id, blocked_obstacle_id: b }))), ["obstacle_id", "blocked_obstacle_id"], false);
+            await sync("obstacle_blocks", d.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ obstacle_id: o.id, block_id: b }))), ["obstacle_id", "block_id"], false);
+
             setSaveState({ status: "saved", at: `${todayStr()} ${new Date().toLocaleTimeString()}` });
             return true;
         } catch (e) { setSaveState({ status: "error", msg: e.message || String(e) }); return false; }
