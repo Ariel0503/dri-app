@@ -425,6 +425,8 @@ create unique index if not exists block_assignments_block_id_key
 
 drop index if exists public.regions_name_unique;
 drop index if exists public.countries_name_unique;
+drop index if exists public.blocks_name_unique;
+drop index if exists public.bricks_name_unique;
 
 -- ----------------------------------------------------------------------------
 -- Verify (optional): neither index should appear.
