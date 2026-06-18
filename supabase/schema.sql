@@ -78,18 +78,21 @@ create table if not exists business_units (
   id uuid primary key default gen_random_uuid(), name text not null, sort_order int not null default 0);
 
 create table if not exists offer_business_units (
-  offer_id uuid references offers(id) on delete cascade,
-  bu_id    uuid references business_units(id) on delete cascade,
+  id uuid primary key default gen_random_uuid(),
+  offer_id uuid not null references offers(id) on delete cascade,
+  bu_id    uuid not null references business_units(id) on delete cascade,
   primary key (offer_id, bu_id));
 
 create table if not exists wave_countries (
-  wave_id    uuid references waves(id) on delete cascade,
-  country_id uuid references countries(id) on delete cascade,
+  id uuid primary key default gen_random_uuid(),
+  wave_id uuid not null references waves(id) on delete cascade,
+  country_id uuid not null references countries(id) on delete cascade,
   primary key (wave_id, country_id));
 
 create table if not exists offer_waves (
-  offer_id uuid references offers(id) on delete cascade,
-  wave_id  uuid references waves(id) on delete cascade,
+  id uuid primary key default gen_random_uuid(),
+  offer_id uuid not null references offers(id) on delete cascade,
+  wave_id  uuid not null references waves(id) on delete cascade,
   primary key (offer_id, wave_id));
 
 create table if not exists wave_assignments (
@@ -99,8 +102,9 @@ create table if not exists wave_assignments (
   go_live_date date, unique (country_id, wave_id));
 
 create table if not exists wave_assignment_deliveries (
-  assignment_id uuid references wave_assignments(id) on delete cascade,
-  bu_id uuid references business_units(id) on delete cascade,
+  id uuid primary key default gen_random_uuid(),
+  assignment_id uuid not null references wave_assignments(id) on delete cascade,
+  bu_id uuid not null references business_units(id) on delete cascade,
   primary key (assignment_id, bu_id));
 
 -- ---------- 4. ENABLERS + BLOCKS & BRICKS (Module 3) ------------------------
@@ -130,12 +134,13 @@ create table if not exists block_assignments (
   check ((wave_id is not null) <> (offer_id is not null)));
 
 create table if not exists brick_checks (
-  country_id uuid references countries(id) on delete cascade,
-  brick_id   uuid references bricks(id) on delete cascade,
+  id uuid primary key default gen_random_uuid(),
+  country_id uuid not null references countries(id) on delete cascade,
+  brick_id   uuid not null references bricks(id) on delete cascade,
   checked boolean not null default false,
   updated_at timestamptz not null default now(),
   updated_by uuid references profiles(id),
-  primary key (country_id, brick_id));
+  primary key (id));
 
 -- ---------- 5. OBSTACLES / RISKS (Module 2) ---------------------------------
 create table if not exists obstacles (
@@ -428,6 +433,18 @@ drop index if exists public.countries_name_unique;
 drop index if exists public.blocks_name_unique;
 drop index if exists public.bricks_name_unique;
 drop index if exists public.blocks_assignments_name_unique;
+drop index if exists public.offer_business_units_name_unique;
+drop index if exists public.wave_countries_name_unique;
+drop index if exists public.offer_waves_name_unique;
+drop index if exists public.obstacles_name_unique;
+drop index if exists public.obstacle_impacts_name_unique;
+drop index if exists public.obstacle_blocks_name_unique;
+drop index if exists public.brick_exclusions_name_unique;
+drop index if exists public.brick_checks_name_unique;
+drop index if exists public.wave_assignment_deliveries_name_unique;
+drop index if exists public.wave_assignments_name_unique;
+drop index if exists public.dependencies_name_unique;
+drop index if exists public.programme_name_unique;
 
 -- ----------------------------------------------------------------------------
 -- Verify (optional): neither index should appear.
