@@ -415,3 +415,28 @@ create unique index if not exists block_assignments_block_id_key
 -- brick_exclusions, brick_checks, obstacle_*) already have composite PRIMARY
 -- KEYs, which the upsert uses as its conflict target — no change needed.
 -- ----------------------------------------------------------------------------
+-- ============================================================================
+--  TRANSFORMATION READINESS — DROP NAME-UNIQUE INDEXES
+--  Run AFTER the main schema. Safe to run multiple times (idempotent).
+--
+--  Why: the app upserts entities ON CONFLICT (id) and reconciles removals by
+--  pruning ids no longer present. regions and countries also carry a SEPARATE
+--  unique index on lower(name). When a row arrives with a NEW id but an
+--  EXISTING name, the id-conflict rule doesn't apply, Postgres tries a plain
+--  INSERT, and the name index raises 409 Conflict. Identity in this app is the
+--  UUID, so the name-unique index is what breaks saves — drop it.
+--
+--  No data loss: this only removes the indexes. After the next successful Save,
+--  the upsert+prune in sync() reconciles to exactly the in-memory set, so any
+--  duplicate-name rows left from earlier attempts are pruned automatically.
+-- ============================================================================
+
+drop index if exists public.regions_name_unique;
+drop index if exists public.countries_name_unique;
+
+-- ----------------------------------------------------------------------------
+-- Verify (optional): neither index should appear.
+--   select indexname from pg_indexes
+--   where schemaname = 'public'
+--     and indexname in ('regions_name_unique','countries_name_unique');
+-- ----------------------------------------------------------------------------
