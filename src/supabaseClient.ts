@@ -7,13 +7,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const publishable = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
+const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 let client: SupabaseClient | null = null;
 export let initError: string | null = null;
 
-if (!url || !publishable) {
-  const missing = [!url && "VITE_SUPABASE_URL", !publishable && "VITE_SUPABASE_PUBLISHABLE_KEY"]
+if (!url || !anon) {
+  const missing = [!url && "VITE_SUPABASE_URL", !anon && "VITE_SUPABASE_ANON_KEY"]
     .filter(Boolean)
     .join(" and ");
   // These are read at BUILD time. If this fires in production, the variables
@@ -24,7 +24,7 @@ if (!url || !publishable) {
   console.warn("[supabaseClient]", initError);
 } else {
   try {
-    client = createClient(url, publishable, {
+    client = createClient(url, anon, {
       auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
     });
   } catch (e: any) {

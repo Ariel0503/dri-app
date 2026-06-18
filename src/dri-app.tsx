@@ -2,33 +2,26 @@ import { useState, useRef, useEffect } from "react";
 import { Gauge, AlertTriangle, Layers, FileBarChart, Settings as Cog, ChevronDown, ChevronRight, Plus, Trash2, Download, Calendar, GitBranch, List, Upload, FileDown, CheckSquare, Square, Save, LogOut, Lock, Pencil, CheckCheck, Eraser } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import * as XLSX from "xlsx";
+// STATIC import: Vite compiles the client into the main chunk, so there is no
+// runtime chunk to fetch — this is what kills the "/assets/supabaseClient 404".
+// (The previous `await import(/* @vite-ignore */ path)` told Vite NOT to bundle
+// it, leaving a bare path the browser then 404'd on.) `supabase` is the client
+// when VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY were set at build time, else
+// null — see src/supabaseClient.ts.
+import { supabase as _sb } from "./supabaseClient";
 
 /* ============================================================================
-   SUPABASE PERSISTENCE (optional, repo-only — preview runs in-memory)
-   - This file imports your existing client lazily, ONLY when VITE_SUPABASE_URL
-     is present, so it never breaks the artifact preview.
-   - In your repo, keep src/supabaseClient.js exporting `supabase`
-     (createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY)).
+   SUPABASE PERSISTENCE (optional — preview/dev with no env vars runs in-memory)
+   - Keep src/supabaseClient.ts exporting `supabase`
+     (createClient(VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY) or null).
    - Run the companion SQL (transformation_schema_additions.sql) once: it adds
      wave_id to brick_checks and creates the brick_exclusions table.
    - Set LOAD_FROM_DB = false if you want to disable load-on-login while testing.
 ============================================================================ */
 const LOAD_FROM_DB = true;
 
-let _sb = null, _sbTried = false;
-async function getSupabase() {
-    if (_sbTried) return _sb;
-    _sbTried = true;
-    try {
-        const env = (typeof import.meta !== "undefined" && import.meta.env) ? import.meta.env : {} as any;
-        if (env.VITE_SUPABASE_URL) {
-            const path = "./supabaseClient";
-            const mod = await import(/* @vite-ignore */ path);
-            _sb = mod.supabase || mod.default || null;
-        }
-    } catch { _sb = null; }
-    return _sb;
-}
+// async-shaped so existing `await getSupabase()` call sites are unchanged.
+async function getSupabase() { return _sb; }
 
 /* ---------- palette ---------- */
 const C = {
