@@ -329,6 +329,7 @@ for all
 to authenticated
 using (can_write())
 with check (can_write());
+on conflict (id) do nothing;
 
 -- Excel import write (allow import writes as authenticated)
 drop policy if exists brick_exclusions_excel_import_write on public.brick_exclusions;
@@ -338,6 +339,7 @@ for all
 to authenticated
 using (true)
 with check (true);
+on conflict (id) do nothing;
 
 
 
@@ -353,6 +355,7 @@ for all
 to authenticated
 using (can_write())
 with check (can_write());
+on conflict (id) do nothing;
 
 -- Excel import write
 drop policy if exists offer_business_units_excel_import_write on public.offer_business_units;
@@ -362,6 +365,8 @@ for all
 to authenticated
 using (true)
 with check (true);
+on conflict (id) do nothing;
+
 
 
 
@@ -407,6 +412,14 @@ where  a.block_id = b.block_id
 create unique index if not exists block_assignments_block_id_key
   on public.block_assignments (block_id);
 
+  delete from public.offer_business_units a
+using  public.offer_business_units b
+where  a.offer_id = b.offer_id
+  and  a.id     < b.id;
+
+create unique index if not exists offer_business_units_id_key
+  on public.offer_business_units (id);
+
 -- ----------------------------------------------------------------------------
 -- Note: other link tables (offer_business_units, wave_countries, offer_waves,
 -- brick_exclusions, brick_checks, obstacle_*) already have composite PRIMARY
@@ -433,7 +446,6 @@ drop index if exists public.countries_name_unique;
 drop index if exists public.blocks_name_unique;
 drop index if exists public.bricks_name_unique;
 drop index if exists public.blocks_assignments_name_unique;
-drop index if exists public.offer_business_units_name_unique;
 drop index if exists public.wave_countries_name_unique;
 drop index if exists public.offer_waves_name_unique;
 drop index if exists public.obstacles_name_unique;
