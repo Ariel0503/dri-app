@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+3import { useState, useRef, useEffect } from "react";
 import { Gauge, AlertTriangle, Layers, FileBarChart, Settings as Cog, ChevronDown, ChevronRight, Plus, Trash2, Download, Calendar, GitBranch, List, Upload, FileDown, CheckSquare, Square, Save, LogOut, Lock, Pencil, CheckCheck, Eraser } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import * as XLSX from "xlsx";
@@ -377,6 +377,48 @@ export default function App() {
         const sb = await getSupabase();
         if (!sb) { setSaveState({ status: "local" }); return false; }
         try {
+            // ---------- 0. canonical ids: reuse existing rows by NAME -----------
+            // regions & countries carry a unique index on lower(name). The seed
+            // and the Excel import can mint a NEW uuid for a name that already
+            // exists, which makes the id-based upsert attempt an INSERT and trip
+            // that index (409). Resolve each name to the id already in the DB and
+            // rewrite every foreign key onto it, so the write is always an UPDATE
+            // — no 409, and no duplicate rows — whether or not the index is there.
+            const idMap = {};
+            const resolveByName = async (table, items) => {
+                if (!items.length) return;
+                const rows = [];
+                for (let from = 0; ; from += 1000) {
+                    const { data, error } = await sb.from(table).select("id,name").range(from, from + 999);
+                    if (error) throw new Error(`${table} (resolve): ${error.message}`);
+                    rows.push(...(data || []));
+                    if (!data || data.length < 1000) break;
+                }
+                const byName = {};
+                rows.forEach((r) => { byName[String(r.name).trim().toLowerCase()] = r.id; });
+                items.forEach((it) => { const hit = byName[String(it.name).trim().toLowerCase()]; if (hit && hit !== it.id) idMap[it.id] = hit; });
+            };
+            await resolveByName("regions", d.regions);
+            await resolveByName("countries", d.countries);
+
+            const mid = (id) => idMap[id] || id;                          // remap one id
+            const mkey = (k) => String(k).split("|").map(mid).join("|");  // remap a composite map key
+            const mmap = (m) => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [mkey(k), v]));
+            // D: the snapshot with region/country ids (and the FKs pointing at them)
+            // rewritten to their canonical DB ids. Only region/country ids are in
+            // idMap, so segments holding waves/offers/bricks/BUs pass through.
+            const D = {
+                regions: d.regions.map((r) => ({ ...r, id: mid(r.id) })),
+                countries: d.countries.map((c) => ({ ...c, id: mid(c.id), regionId: mid(c.regionId) })),
+                waves: d.waves, offers: d.offers, bus: d.bus, blocks: d.blocks, bricks: d.bricks,
+                done: mmap(d.done),                 // country|wave|brick -> country remapped
+                brickExcl: mmap(d.brickExcl),       // brick|scope        -> unaffected
+                obstacles: d.obstacles.map((o) => ({ ...o, countryId: mid(o.countryId) })),
+                offerBU: d.offerBU,                 // offer|bu           -> unaffected
+                waveCountry: mmap(d.waveCountry),   // wave|country       -> country remapped
+                offerWave: d.offerWave,             // offer|wave         -> unaffected
+            };
+
             // sync(): upsert the desired rows FIRST, then delete only the rows that
             // are no longer present. Upserting first means a mid-way failure can
             // leave EXTRA rows at worst — it can never empty a table, which the old
@@ -408,42 +450,42 @@ export default function App() {
             };
 
             // --- entities (keyed by id; parents before children for FKs) --------
-            await sync("regions", d.regions.map((r, i) => ({ id: r.id, name: r.name, sort_order: i })), ["id"]);
-            await sync("countries", d.countries.map((c) => ({ id: c.id, name: c.name, region_id: c.regionId })), ["id"]);
-            await sync("waves", d.waves.map((w, i) => ({ id: w.id, name: w.name, deadline: toISODate(w.deadline), sort_order: i })), ["id"]);
-            await sync("offers", d.offers.map((o) => ({ id: o.id, name: o.name })), ["id"]);
-            await sync("business_units", d.bus.map((b, i) => ({ id: b.id, name: b.name, sort_order: i })), ["id"]);
-            await sync("blocks", d.blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })), ["id"]);
-            await sync("bricks", d.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })), ["id"]);
+            await sync("regions", D.regions.map((r, i) => ({ id: r.id, name: r.name, sort_order: i })), ["id"]);
+            await sync("countries", D.countries.map((c) => ({ id: c.id, name: c.name, region_id: c.regionId })), ["id"]);
+            await sync("waves", D.waves.map((w, i) => ({ id: w.id, name: w.name, deadline: toISODate(w.deadline), sort_order: i })), ["id"]);
+            await sync("offers", D.offers.map((o) => ({ id: o.id, name: o.name })), ["id"]);
+            await sync("business_units", D.bus.map((b, i) => ({ id: b.id, name: b.name, sort_order: i })), ["id"]);
+            await sync("blocks", D.blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })), ["id"]);
+            await sync("bricks", D.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })), ["id"]);
 
             // block scope: one row per scoped block. Needs UNIQUE(block_id) — see
             // transformation_upsert_prep.sql. Both columns are written so a
             // wave<->offer scope switch still satisfies the (wave XOR offer) check.
             await sync("block_assignments",
-                d.blocks.filter((b) => b.scope && b.scope !== "all").map((b) => b.level === "offer"
+                D.blocks.filter((b) => b.scope && b.scope !== "all").map((b) => b.level === "offer"
                     ? { block_id: b.id, wave_id: null, offer_id: b.scope }
                     : { block_id: b.id, wave_id: b.scope, offer_id: null }),
                 ["block_id"]);
 
             // --- link tables (presence only -> insert-or-ignore, prune removals) -
-            await sync("offer_business_units", keysTrue(d.offerBU).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
-            await sync("wave_countries", keysTrue(d.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
-            await sync("offer_waves", keysTrue(d.offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
-            await sync("brick_exclusions", keysTrue(d.brickExcl).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
+            await sync("offer_business_units", keysTrue(D.offerBU).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
+            await sync("wave_countries", keysTrue(D.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
+            await sync("offer_waves", keysTrue(D.offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
+            await sync("brick_exclusions", keysTrue(D.brickExcl).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
 
             // brick_checks: per (country, wave, brick). updated_by is stamped when
             // userId is a valid UUID (a real profiles.id). merge so checked +
             // updated_by update in place rather than churning rows.
             const stamp = isUUID(userId) ? { updated_by: userId } : {};
-            const bcRows = Object.entries(d.done).map(([k, v]) => { const [country_id, wave_id, brick_id] = k.split("|"); return { country_id, wave_id, brick_id, checked: !!v, ...stamp }; });
+            const bcRows = Object.entries(D.done).map(([k, v]) => { const [country_id, wave_id, brick_id] = k.split("|"); return { country_id, wave_id, brick_id, checked: !!v, ...stamp }; });
             await sync("brick_checks", bcRows, ["country_id", "wave_id", "brick_id"], true);
 
             // --- obstacles + their link tables ----------------------------------
-            await sync("obstacles", d.obstacles.map((o) => ({ id: o.id, title: o.title, owner: o.owner, severity: sevToDb(o.severity), resolution: o.resolution, status: "open" })), ["id"]);
-            await sync("obstacle_countries", d.obstacles.filter((o) => o.countryId).map((o) => ({ obstacle_id: o.id, country_id: o.countryId })), ["obstacle_id", "country_id"], false);
-            await sync("obstacle_waves", d.obstacles.filter((o) => o.waveId).map((o) => ({ obstacle_id: o.id, wave_id: o.waveId })), ["obstacle_id", "wave_id"], false);
-            await sync("obstacle_impacts", d.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ obstacle_id: o.id, blocked_obstacle_id: b }))), ["obstacle_id", "blocked_obstacle_id"], false);
-            await sync("obstacle_blocks", d.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ obstacle_id: o.id, block_id: b }))), ["obstacle_id", "block_id"], false);
+            await sync("obstacles", D.obstacles.map((o) => ({ id: o.id, title: o.title, owner: o.owner, severity: sevToDb(o.severity), resolution: o.resolution, status: "open" })), ["id"]);
+            await sync("obstacle_countries", D.obstacles.filter((o) => o.countryId).map((o) => ({ obstacle_id: o.id, country_id: o.countryId })), ["obstacle_id", "country_id"], false);
+            await sync("obstacle_waves", D.obstacles.filter((o) => o.waveId).map((o) => ({ obstacle_id: o.id, wave_id: o.waveId })), ["obstacle_id", "wave_id"], false);
+            await sync("obstacle_impacts", D.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ obstacle_id: o.id, blocked_obstacle_id: b }))), ["obstacle_id", "blocked_obstacle_id"], false);
+            await sync("obstacle_blocks", D.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ obstacle_id: o.id, block_id: b }))), ["obstacle_id", "block_id"], false);
 
             setSaveState({ status: "saved", at: `${todayStr()} ${new Date().toLocaleTimeString()}` });
             return true;
