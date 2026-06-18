@@ -470,14 +470,44 @@ export default function App() {
             await sync("blocks", D.blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })), ["id"]);
             await sync("bricks", D.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })), ["id"]);
 
-            // block scope: one row per scoped block. Needs UNIQUE(block_id) — see
-            // transformation_upsert_prep.sql. Both columns are written so a
-            // wave<->offer scope switch still satisfies the (wave XOR offer) check.
-            await sync("block_assignments",
-                D.blocks.filter((b) => b.scope && b.scope !== "all").map((b) => b.level === "offer"
+            // block scope: one row per scoped block. block_assignments is the only
+            // target with a synthetic `id` PK and no natural unique key, so it can't
+            // use on_conflict. Reconcile by block_id via the id PK: update the
+            // block's existing row in place, insert when it has none, and delete
+            // rows for blocks no longer scoped (plus any duplicate rows). No DB
+            // migration (UNIQUE(block_id) not required) and no delete-then-insert.
+            {
+                const baWant = D.blocks.filter((b) => b.scope && b.scope !== "all").map((b) => b.level === "offer"
                     ? { block_id: b.id, wave_id: null, offer_id: b.scope }
-                    : { block_id: b.id, wave_id: b.scope, offer_id: null }),
-                ["block_id"]);
+                    : { block_id: b.id, wave_id: b.scope, offer_id: null });
+                const existing = [];
+                for (let from = 0; ; from += 1000) {
+                    const { data, error } = await sb.from("block_assignments").select("id,block_id,wave_id,offer_id").range(from, from + 999);
+                    if (error) throw new Error(`block_assignments (read): ${error.message}`);
+                    existing.push(...(data || []));
+                    if (!data || data.length < 1000) break;
+                }
+                const byBlock = {}, dupIds = [];
+                existing.forEach((r) => { if (byBlock[r.block_id]) dupIds.push(r.id); else byBlock[r.block_id] = r; });
+                const wantBlocks = new Set(baWant.map((r) => r.block_id));
+                for (const row of baWant) {
+                    const cur = byBlock[row.block_id];
+                    if (cur) {
+                        if (cur.wave_id !== row.wave_id || cur.offer_id !== row.offer_id) {
+                            const { error } = await sb.from("block_assignments").update({ wave_id: row.wave_id, offer_id: row.offer_id }).eq("id", cur.id);
+                            if (error) throw new Error(`block_assignments (update): ${error.message}`);
+                        }
+                    } else {
+                        const { error } = await sb.from("block_assignments").insert(row);
+                        if (error) throw new Error(`block_assignments (insert): ${error.message}`);
+                    }
+                }
+                const delIds = [...dupIds, ...existing.filter((r) => byBlock[r.block_id] === r && !wantBlocks.has(r.block_id)).map((r) => r.id)];
+                for (const id of delIds) {
+                    const { error } = await sb.from("block_assignments").delete().eq("id", id);
+                    if (error) throw new Error(`block_assignments (prune): ${error.message}`);
+                }
+            }
 
             // --- link tables (presence only -> insert-or-ignore, prune removals) -
             await sync("offer_business_units", keysTrue(D.offerBU).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
