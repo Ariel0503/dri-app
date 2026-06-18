@@ -378,12 +378,16 @@ export default function App() {
         if (!sb) { setSaveState({ status: "local" }); return false; }
         try {
             // ---------- 0. canonical ids: reuse existing rows by NAME -----------
-            // regions & countries carry a unique index on lower(name). The seed
-            // and the Excel import can mint a NEW uuid for a name that already
-            // exists, which makes the id-based upsert attempt an INSERT and trip
-            // that index (409). Resolve each name to the id already in the DB and
-            // rewrite every foreign key onto it, so the write is always an UPDATE
-            // — no 409, and no duplicate rows — whether or not the index is there.
+            // The Settings dimension tables (regions, countries, waves, offers,
+            // business_units) carry a unique index on lower(name). The seed and the
+            // Excel import can mint a NEW uuid for a name that already exists, which
+            // makes the id-based upsert attempt an INSERT and trip that index (409).
+            // Resolve each name to the id already in the DB and rewrite EVERY foreign
+            // key onto it, so the write is always an UPDATE — no 409, and no
+            // duplicate rows — whether or not the index is present. (Blocks/bricks
+            // are intentionally NOT name-resolved: their names can legitimately
+            // repeat, so they stay keyed by id; their references to the dimensions
+            // above are still remapped below.)
             const idMap = {};
             const resolveByName = async (table, items) => {
                 if (!items.length) return;
@@ -400,23 +404,31 @@ export default function App() {
             };
             await resolveByName("regions", d.regions);
             await resolveByName("countries", d.countries);
+            await resolveByName("waves", d.waves);
+            await resolveByName("offers", d.offers);
+            await resolveByName("business_units", d.bus);
 
             const mid = (id) => idMap[id] || id;                          // remap one id
+            const msc = (s) => (!s || s === "all") ? s : mid(s);          // block scope (keep "all")
             const mkey = (k) => String(k).split("|").map(mid).join("|");  // remap a composite map key
             const mmap = (m) => Object.fromEntries(Object.entries(m || {}).map(([k, v]) => [mkey(k), v]));
-            // D: the snapshot with region/country ids (and the FKs pointing at them)
-            // rewritten to their canonical DB ids. Only region/country ids are in
-            // idMap, so segments holding waves/offers/bricks/BUs pass through.
+            // D: the snapshot with all dimension ids (and every FK that points at
+            // them) rewritten to canonical DB ids. mid() is a no-op for any id not
+            // in idMap, so block/brick ids and other segments pass through untouched.
             const D = {
                 regions: d.regions.map((r) => ({ ...r, id: mid(r.id) })),
                 countries: d.countries.map((c) => ({ ...c, id: mid(c.id), regionId: mid(c.regionId) })),
-                waves: d.waves, offers: d.offers, bus: d.bus, blocks: d.blocks, bricks: d.bricks,
-                done: mmap(d.done),                 // country|wave|brick -> country remapped
-                brickExcl: mmap(d.brickExcl),       // brick|scope        -> unaffected
-                obstacles: d.obstacles.map((o) => ({ ...o, countryId: mid(o.countryId) })),
-                offerBU: d.offerBU,                 // offer|bu           -> unaffected
-                waveCountry: mmap(d.waveCountry),   // wave|country       -> country remapped
-                offerWave: d.offerWave,             // offer|wave         -> unaffected
+                waves: d.waves.map((w) => ({ ...w, id: mid(w.id) })),
+                offers: d.offers.map((o) => ({ ...o, id: mid(o.id) })),
+                bus: d.bus.map((b) => ({ ...b, id: mid(b.id) })),
+                blocks: d.blocks.map((b) => ({ ...b, scope: msc(b.scope) })),  // scope -> a wave/offer id
+                bricks: d.bricks,                                              // keyed by id; blockId unchanged
+                done: mmap(d.done),                 // country|wave|brick -> country & wave remapped
+                brickExcl: mmap(d.brickExcl),       // brick|scope        -> scope(wave/offer) remapped
+                obstacles: d.obstacles.map((o) => ({ ...o, countryId: mid(o.countryId), waveId: mid(o.waveId) })),
+                offerBU: mmap(d.offerBU),           // offer|bu           -> both remapped
+                waveCountry: mmap(d.waveCountry),   // wave|country       -> both remapped
+                offerWave: mmap(d.offerWave),       // offer|wave         -> both remapped
             };
 
             // sync(): upsert the desired rows FIRST, then delete only the rows that
