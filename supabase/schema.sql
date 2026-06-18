@@ -394,14 +394,6 @@ with check (true);
 
 -- De-dupe first (keep one row per block_id) so the unique index can be created
 -- even if older delete-then-insert runs left duplicates behind.
-delete from public.regions a
-using  public.regions b
-where  a.name = b.name
-  and  a.userid    < b.userid;
-
-create unique index if not exists region_name_key
-
-  on public.regions (name));
 delete from public.block_assignments a
 using  public.block_assignments b
 where  a.block_id = b.block_id
