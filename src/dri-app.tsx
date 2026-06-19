@@ -470,7 +470,6 @@ export default function App() {
             await sync("blocks", D.blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })), ["id"]);
             await sync("offer_business_units", D.offer_business_units.map((b, i) => ({ id: b.id, offer_id: b.offerId, business_unit_id: b.businessUnitId, sort_order: i })), ["id"]);
             await sync("bricks", D.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })), ["id"]);
-
             // block scope: one row per scoped block. block_assignments is the only
             // target with a synthetic `id` PK and no natural unique key, so it can't
             // use on_conflict. Reconcile by block_id via the id PK: update the
@@ -525,10 +524,10 @@ export default function App() {
 
             // --- obstacles + their link tables ----------------------------------
             await sync("obstacles", D.obstacles.map((o) => ({ id: o.id, title: o.title, owner: o.owner, severity: sevToDb(o.severity), resolution: o.resolution, status: "open" })), ["id"]);
-            await sync("obstacle_countries", D.obstacles.filter((o) => o.countryId).map((o) => ({ obstacle_id: o.id, country_id: o.countryId })), ["obstacle_id", "country_id"], false);
-            await sync("obstacle_waves", D.obstacles.filter((o) => o.waveId).map((o) => ({ obstacle_id: o.id, wave_id: o.waveId })), ["obstacle_id", "wave_id"], false);
-            await sync("obstacle_impacts", D.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ obstacle_id: o.id, blocked_obstacle_id: b }))), ["obstacle_id", "blocked_obstacle_id"], false);
-            await sync("obstacle_blocks", D.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ obstacle_id: o.id, block_id: b }))), ["obstacle_id", "block_id"], false);
+            await sync("obstacle_countries", D.obstacles.filter((o) => o.countryId).map((o) => ({ id: o.id, obstacle_id: o.id, country_id: o.countryId })), ["id","obstacle_id", "country_id"], false);
+            await sync("obstacle_waves", D.obstacles.filter((o) => o.waveId).map((o) => ({ id: o.id, obstacle_id: o.id, wave_id: o.waveId })), ["id","obstacle_id", "wave_id"], false);
+            await sync("obstacle_impacts", D.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ id: o.id, obstacle_id: o.id, blocked_obstacle_id: b }))), ["id","obstacle_id", "blocked_obstacle_id"], false);
+            await sync("obstacle_blocks", D.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ id: o.id, obstacle_id: o.id, block_id: b }))), ["id","obstacle_id", "block_id"], false);
 
             setSaveState({ status: "saved", at: `${todayStr()} ${new Date().toLocaleTimeString()}` });
             return true;
