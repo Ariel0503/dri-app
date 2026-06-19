@@ -283,7 +283,7 @@ function LoginScreen({ onLogin }) {
                 </Field>
                 {err && <p className="mb-3 text-sm" style={{ color: C.high }}>{err}</p>}
                 <button onClick={submit} className="w-full rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2" style={{ background: C.mid, color: C.white }}>Sign in</button>
-                <p className="mt-4 text-center text-xs" style={{ color: C.soft }}>Without Supabase configured, any email + password signs in (preview mode).</p>
+                {!_sb && <p className="mt-4 text-center text-xs" style={{ color: C.soft }}>Without Supabase configured, any email + password signs in (preview mode).</p>}
             </Card>
         </div>
     );
