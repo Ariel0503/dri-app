@@ -519,7 +519,7 @@ export default function App() {
             await sync("wave_countries", keysTrue(D.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
             await sync("offer_waves", keysTrue(D.offerWave).mmap(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
             await sync("brick_exclusions", keysTrue(D.brickExcl).mmap(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
-            await sync("block_assignments", keysTrue(D.blockAssignments).mmap(([block_id, wave_id, offer_id, country_id]) => ({ block_id, wave_id, offer_id, country_id })), ["block_id", "wave_id", "offer_id", "country_id"], false);
+            await sync("block_assignments", keysTrue(D.blockAssignments).map(([block_id, wave_id, offer_id, country_id]) => ({ block_id, wave_id, offer_id, country_id })), ["block_id", "wave_id", "offer_id", "country_id"], false);
             // brick_checks: per (country, wave, brick). updated_by is stamped when
             // userId is a valid UUID (a real profiles.id). merge so checked +
             // updated_by update in place rather than churning rows.
