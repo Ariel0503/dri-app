@@ -517,7 +517,7 @@ export default function App() {
             // key as a 2-element array; destructure exactly two.
             await sync("offer_business_units", keysTrue(D.offerBUs).mmap(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
             await sync("wave_countries", keysTrue(D.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
-            await sync("offer_waves", keysTrue(D.offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
+            await sync("offer_waves", keysTrue(D.offerWave).mmap(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
             await sync("brick_exclusions", keysTrue(D.brickExcl).mmap(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
 
             // brick_checks: per (country, wave, brick). updated_by is stamped when
