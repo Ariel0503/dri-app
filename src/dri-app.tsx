@@ -468,6 +468,7 @@ export default function App() {
             await sync("offers", D.offers.map((o) => ({ id: o.id, name: o.name })), ["id"]);
             await sync("business_units", D.bus.map((b, i) => ({ id: b.id, name: b.name, sort_order: i })), ["id"]);
             await sync("blocks", D.blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })), ["id"]);
+            await sync("offer_business_units", D.offer_business_units.map((b, i) => ({ id: b.id, offer_id: b.offerId, business_unit_id: b.businessUnitId, sort_order: i })), ["id"]);
             await sync("bricks", D.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })), ["id"]);
 
             // block scope: one row per scoped block. block_assignments is the only
