@@ -455,7 +455,7 @@ export default function App() {
                 const want = new Set(rows.map(keyOf));
                 for (const r of existing) {
                     if (want.has(keyOf(r))) continue;
-                    let q = sb.from(t).delete();
+                    let q: any = sb.from(t).delete();
                     keyCols.forEach((c) => { q = q.eq(c, r[c]); });
                     const { error: de } = await q; if (de) throw new Error(`${t} (prune): ${de.message}`);
                 }
@@ -509,21 +509,24 @@ export default function App() {
             }
 
             // --- link tables (presence only -> insert-or-ignore, prune removals) -
-            // Each table now has a surrogate `id uuid primary key default
-            // gen_random_uuid()` PLUS a UNIQUE constraint on its natural key. We do
-            // NOT send `id` — the DB fills it. We upsert/prune on the NATURAL KEY,
-            // so re-saving the same pair conflicts on that unique constraint and is
-            // ignored/updated in place (never a new id). keysTrue() yields the split
-            // key as a 2-element array; destructure exactly two.
-            await sync("offer_business_units", keysTrue(D.offerBUs).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
-            await sync("wave_countries", keysTrue(D.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
-            await sync("offer_waves", keysTrue(D.offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
-            await sync("brick_exclusions", keysTrue(D.brickExcl).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
+            // Filter each link table to only pairs where BOTH FK sides still exist in
+            // the entity sets that were just synced. If a parent was deleted, the DB
+            // cascade already removed its link rows; re-inserting them would FK-409.
+            const offerIds = new Set(D.offers.map((o) => o.id));
+            const buIds = new Set(D.bus.map((b) => b.id));
+            const waveIds = new Set(D.waves.map((w) => w.id));
+            const countryIds = new Set(D.countries.map((c) => c.id));
+            const brickIds = new Set(D.bricks.map((b) => b.id));
+            const scopeIds = new Set([...offerIds, ...waveIds]);
+            await sync("offer_business_units", keysTrue(D.offerBUs).filter(([o, b]) => offerIds.has(o) && buIds.has(b)).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
+            await sync("wave_countries", keysTrue(D.waveCountry).filter(([w, c]) => waveIds.has(w) && countryIds.has(c)).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
+            await sync("offer_waves", keysTrue(D.offerWave).filter(([o, w]) => offerIds.has(o) && waveIds.has(w)).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
+            await sync("brick_exclusions", keysTrue(D.brickExcl).filter(([b, s]) => brickIds.has(b) && scopeIds.has(s)).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
             // brick_checks: per (country, wave, brick). updated_by is stamped when
             // userId is a valid UUID (a real profiles.id). merge so checked +
             // updated_by update in place rather than churning rows.
             const stamp = isUUID(userId) ? { updated_by: userId } : {};
-            const bcRows = Object.entries(D.done).map(([k, v]) => { const [country_id, wave_id, brick_id] = k.split("|"); return { country_id, wave_id, brick_id, checked: !!v, ...stamp }; });
+            const bcRows = Object.entries(D.done).filter(([k]) => { const [c, w, b] = k.split("|"); return countryIds.has(c) && waveIds.has(w) && brickIds.has(b); }).map(([k, v]) => { const [country_id, wave_id, brick_id] = k.split("|"); return { country_id, wave_id, brick_id, checked: !!v, ...stamp }; });
             await sync("brick_checks", bcRows, ["country_id", "wave_id", "brick_id"], true);
 
             // --- obstacles + their link tables ----------------------------------
