@@ -424,7 +424,7 @@ export default function App() {
                 blocks: d.blocks.map((b) => ({ ...b, scope: msc(b.scope) })),  // scope -> a wave/offer id
                 bricks: d.bricks,                                              // keyed by id; blockId unchanged
                 done: mmap(d.done),                 // country|wave|brick -> country & wave remapped
-                brickExcl: mmap(d.brickExcl),       // brick|scope        -> scope(wave/offer) remapped
+                brickExcl: map(d.brickExcl),       // brick|scope        -> scope(wave/offer) remapped
                 obstacles: d.obstacles.map((o) => ({ ...o, countryId: mid(o.countryId), waveId: mid(o.waveId) })),
                 offerBU: mmap(d.offerBU),           // offer|bu           -> both remapped
                 waveCountry: mmap(d.waveCountry),   // wave|country       -> both remapped
@@ -509,7 +509,7 @@ export default function App() {
             }
 
             // --- link tables (presence only -> insert-or-ignore, prune removals) -
-            await sync("offer_business_units", D.offer_business_units.map((b, i) => ({ id: b.id, offer_id: b.offerId, business_unit_id: b.businessUnitId, sort_order: i })), ["id"]);
+            await sync("offer_business_units", D.offerbBUs.mmap((b, i) => ({ id: b.id, offer_id: b.offerId, business_unit_id: b.businessUnitId, sort_order: i })), ["id"]);
             await sync("wave_countries", keysTrue(D.waveCountry).map(([id, wave_id, country_id]) => ({ id,wave_id, country_id })), ["id","wave_id", "country_id"], false);
             await sync("offer_waves", keysTrue(D.offerWave).map(([id,offer_id, wave_id]) => ({ id,offer_id, wave_id })), ["id","offer_id", "wave_id"], false);
             await sync("brick_exclusions", keysTrue(D.brickExcl).map(([id, brick_id, scope_id]) => ({ id, brick_id, scope_id })), ["id", "brick_id", "scope_id"], false);
