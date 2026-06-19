@@ -7,13 +7,15 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
-const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
+// Supabase renamed the anon key to VITE_SUPABASE_PUBLISHABLE_KEY in newer
+// project dashboards — accept either name so both .env styles work.
+const anon = (import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) as string | undefined;
 
 let client: SupabaseClient | null = null;
 export let initError: string | null = null;
 
 if (!url || !anon) {
-  const missing = [!url && "VITE_SUPABASE_URL", !anon && "VITE_SUPABASE_ANON_KEY"]
+  const missing = [!url && "VITE_SUPABASE_URL", !anon && "VITE_SUPABASE_ANON_KEY or VITE_SUPABASE_PUBLISHABLE_KEY"]
     .filter(Boolean)
     .join(" and ");
   // These are read at BUILD time. If this fires in production, the variables

@@ -134,13 +134,14 @@ create table if not exists block_assignments (
   check ((wave_id is not null) <> (offer_id is not null)));
 
 create table if not exists brick_checks (
-  id uuid primary key default gen_random_uuid(),
+  id uuid default gen_random_uuid(),
   country_id uuid not null references countries(id) on delete cascade,
+  wave_id    uuid not null references waves(id) on delete cascade,
   brick_id   uuid not null references bricks(id) on delete cascade,
   checked boolean not null default false,
   updated_at timestamptz not null default now(),
   updated_by uuid references profiles(id),
-  primary key (id));
+  primary key (country_id, wave_id, brick_id));
 
 -- ---------- 5. OBSTACLES / RISKS (Module 2) ---------------------------------
 create table if not exists obstacles (
@@ -233,12 +234,15 @@ alter table brick_checks add column if not exists wave_id uuid references waves(
 
 do $$
 begin
-  -- Drop the old (country_id, brick_id) PK if that's what's there, then recreate
-  -- as (country_id, wave_id, brick_id). Guarded so re-runs don't error.
+  -- Drop the old PK if it is anything other than (country_id, wave_id, brick_id).
+  -- Handles legacy deployments with PRIMARY KEY (country_id, brick_id) and
+  -- deployments created from the buggy schema that had PRIMARY KEY (id).
   if exists (
     select 1 from pg_constraint
     where conrelid = 'brick_checks'::regclass and contype = 'p'
-      and pg_get_constraintdef(oid) = 'PRIMARY KEY (country_id, brick_id)'
+      and pg_get_constraintdef(oid) not in (
+        'PRIMARY KEY (country_id, wave_id, brick_id)'
+      )
   ) then
     alter table brick_checks drop constraint brick_checks_pkey;
   end if;
