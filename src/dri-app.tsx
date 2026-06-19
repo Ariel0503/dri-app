@@ -431,28 +431,44 @@ export default function App() {
                 offerWave: mmap(d.offerWave),       // offer|wave         -> both remapped
             };
 
-            // sync(): upsert the desired rows FIRST, then delete only the rows that
-            // are no longer present. Upserting first means a mid-way failure can
-            // leave EXTRA rows at worst — it can never empty a table, which the old
-            // delete-then-insert could. keyCols is the natural key (the conflict
-            // target). merge=false -> insert-or-ignore (link tables hold only their
-            // key); merge=true -> also update non-key columns (entities, scopes,
-            // brick_checks). Prune reads the existing keys (paged) and removes the
-            // ones not in the desired set; cascades clean up dependent rows.
+            // sync(): for entity tables (merge=true) upsert then prune stale rows.
+            // For link tables (merge=false) read first, INSERT only missing pairs,
+            // then prune — avoids the 409 that ON CONFLICT (composite) DO NOTHING
+            // raises when the batch contains pairs already present in the table.
             const sync = async (t, rows, keyCols, merge = true) => {
-                if (rows.length) {
-                    const { error } = await sb.from(t).upsert(rows, { onConflict: keyCols.join(","), ignoreDuplicates: !merge });
-                    if (error) throw new Error(`${t}: ${error.message}`);
-                }
+                // Read existing rows first — needed for both prune and (link tables)
+                // insert-diff, so we never send a conflicting batch INSERT.
                 const sel = keyCols.join(","), existing = [];
                 for (let from = 0; ; from += 1000) {
-                    const { data, error } = await sb.from(t).select(sel).range(from, from + 999);
+                    const { data, error } = await (sb.from(t) as any).select(sel).range(from, from + 999);
                     if (error) throw new Error(`${t} (read): ${error.message}`);
                     existing.push(...(data || []));
                     if (!data || data.length < 1000) break;
                 }
-                const keyOf = (r) => keyCols.map((c) => String(r[c])).join("\u0001");
+                const keyOf = (r) => keyCols.map((c) => String(r[c])).join("");
+                const have = new Set(existing.map(keyOf));
                 const want = new Set(rows.map(keyOf));
+
+                if (merge) {
+                    // Entity tables (keyed by id): upsert with ON CONFLICT (id) DO UPDATE —
+                    // safe because the surrogate PK always matches exactly.
+                    if (rows.length) {
+                        const { error } = await sb.from(t).upsert(rows, { onConflict: keyCols.join(",") });
+                        if (error) throw new Error(`${t}: ${error.message}`);
+                    }
+                } else {
+                    // Link tables: INSERT only pairs absent from the DB. This avoids the
+                    // 409 that ON CONFLICT (composite) DO NOTHING raises when the batch
+                    // contains pairs already present — Postgres can't deduplicate those
+                    // within the same statement against the composite natural key.
+                    const toAdd = rows.filter((r) => !have.has(keyOf(r)));
+                    if (toAdd.length) {
+                        const { error } = await sb.from(t).insert(toAdd);
+                        if (error) throw new Error(`${t}: ${error.message}`);
+                    }
+                }
+
+                // Prune rows no longer in the desired set.
                 for (const r of existing) {
                     if (want.has(keyOf(r))) continue;
                     let q: any = sb.from(t).delete();
@@ -508,10 +524,10 @@ export default function App() {
                 }
             }
 
-            // --- link tables (presence only -> insert-or-ignore, prune removals) -
-            // Filter each link table to only pairs where BOTH FK sides still exist in
-            // the entity sets that were just synced. If a parent was deleted, the DB
-            // cascade already removed its link rows; re-inserting them would FK-409.
+            // --- link tables (presence only) ------------------------------------
+            // Filter each link table to only pairs where BOTH FK sides still exist
+            // in the entity sets synced above. If a parent was deleted, the DB
+            // cascade already removed its link rows; re-inserting would FK-409.
             const offerIds = new Set(D.offers.map((o) => o.id));
             const buIds = new Set(D.bus.map((b) => b.id));
             const waveIds = new Set(D.waves.map((w) => w.id));
@@ -985,7 +1001,7 @@ export default function App() {
                 if (Object.keys(doneMap).length) { setDone(doneMap); parts.push(`${Object.keys(doneMap).length} brick checks`); }
                 else if (Bk.length) { setDone({}); } // bricks changed but no checks provided -> reset
 
-                if (!parts.length) { setImportMsg("No recognised sheets found. Use the template’s sheet names."); e.target.value = ""; return; }
+                if (!parts.length) { setImportMsg("No recognised sheets found. Use the template's sheet names."); e.target.value = ""; return; }
 
                 // Production: write the parsed rows straight to the DB tables (don't wait for
                 // setState). Preview (no VITE_SUPABASE_URL): keep it in-memory.
