@@ -108,7 +108,7 @@ const seedObstacles = [
     { id: ID.ob5, title: "Procurement delay on infra", owner: "M. Haddad", severity: "Medium", countryId: ID.cAE, waveId: ID.w1, resolution: "Escalate to SteerCo", blocks: [ID.ob3], blockIds: [ID.bl4] },
 ];
 
-const seedOfferBU = { [`${ID.o1}|${ID.u1}`]: true, [`${ID.o1}|${ID.u2}`]: true, [`${ID.o2}|${ID.u1}`]: true };
+const seedOfferBUs = { [`${ID.o1}|${ID.u1}`]: true, [`${ID.o1}|${ID.u2}`]: true, [`${ID.o2}|${ID.u1}`]: true };
 const seedWaveCountry = { [`${ID.w1}|${ID.cFR}`]: true, [`${ID.w1}|${ID.cDE}`]: true, [`${ID.w1}|${ID.cAE}`]: true, [`${ID.w1}|${ID.cJP}`]: true, [`${ID.w2}|${ID.cAU}`]: true, [`${ID.w2}|${ID.cFR}`]: true };
 const seedOfferWave = { [`${ID.o1}|${ID.w1}`]: true, [`${ID.o1}|${ID.w2}`]: true, [`${ID.o2}|${ID.w1}`]: true };
 
@@ -302,7 +302,7 @@ export default function App() {
     const [done, setDone] = useState(seedDone);
     const [brickExcl, setBrickExcl] = useState(seedBrickExclusions);
     const [obstacles, setObstacles] = useState(seedObstacles);
-    const [offerBU, setOfferBU] = useState(seedOfferBU);
+    const [offerBUs, setOfferBUs] = useState(seedOfferBUs);
     const [waveCountry, setWaveCountry] = useState(seedWaveCountry);
     const [offerWave, setOfferWave] = useState(seedOfferWave);
     const [saveState, setSaveState] = useState<{ status: "idle" | "saving" | "saved" | "local" | "error"; at?: string; msg?: string }>({ status: "idle" });
@@ -370,7 +370,7 @@ export default function App() {
        userId, when a valid UUID, is stamped onto brick_checks.updated_by so each
        imported/saved check is attributed to a user (the auth user id, or the
        Meta sheet's user_id — see the import + template below). */
-    const snapshot = () => ({ regions, countries, waves, offers, bus, blocks, bricks, done, brickExcl, obstacles, offerBU, waveCountry, offerWave });
+    const snapshot = () => ({ regions, countries, waves, offers, bus, blocks, bricks, done, brickExcl, obstacles, offerBUs, waveCountry, offerWave });
 
     const persist = async (d, userId) => {
         setSaveState({ status: "saving" });
@@ -426,7 +426,7 @@ export default function App() {
                 done: mmap(d.done),                 // country|wave|brick -> country & wave remapped
                 brickExcl: mmap(d.brickExcl),       // brick|scope        -> scope(wave/offer) remapped
                 obstacles: d.obstacles.map((o) => ({ ...o, countryId: mid(o.countryId), waveId: mid(o.waveId) })),
-                offerBU: mmap(d.offerBU),           // offer|bu           -> both remapped
+                offerBUs: mmap(d.offerBUs),           // offer|bu           -> both remapped
                 waveCountry: mmap(d.waveCountry),   // wave|country       -> both remapped
                 offerWave: mmap(d.offerWave),       // offer|wave         -> both remapped
             };
@@ -515,10 +515,10 @@ export default function App() {
             // so re-saving the same pair conflicts on that unique constraint and is
             // ignored/updated in place (never a new id). keysTrue() yields the split
             // key as a 2-element array; destructure exactly two.
-            await sync("offer_business_units", keysTrue(D.offerBU).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
+            await sync("offer_business_units", keysTrue(D.offerBUs).mmap(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
             await sync("wave_countries", keysTrue(D.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
             await sync("offer_waves", keysTrue(D.offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
-            await sync("brick_exclusions", keysTrue(D.brickExcl).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
+            await sync("brick_exclusions", keysTrue(D.brickExcl).mmap(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
 
             // brick_checks: per (country, wave, brick). updated_by is stamped when
             // userId is a valid UUID (a real profiles.id). merge so checked +
@@ -559,7 +559,7 @@ export default function App() {
             const Bl = await g("blocks");
             if (Bl.length) setBlocks(Bl.map((b) => { const a = asg.find((x) => x.block_id === b.id); return { id: b.id, name: b.name, weight: Number(b.weight) || 0, level: b.scope_level || "wave", scope: a ? (a.wave_id || a.offer_id) : "all" }; }));
             const Bk = await g("bricks"); if (Bk.length) setBricks(by(Bk).map((b) => ({ id: b.id, name: b.name, blockId: b.block_id })));
-            const obu = await g("offer_business_units"); setOfferBU(Object.fromEntries(obu.map((r) => [`${r.offer_id}|${r.bu_id}`, true])));
+            const obu = await g("offer_business_units"); setOfferBUs(Object.fromEntries(obu.map((r) => [`${r.offer_id}|${r.bu_id}`, true])));
             const wc = await g("wave_countries"); setWaveCountry(Object.fromEntries(wc.map((r) => [`${r.wave_id}|${r.country_id}`, true])));
             const ow = await g("offer_waves"); setOfferWave(Object.fromEntries(ow.map((r) => [`${r.offer_id}|${r.wave_id}`, true])));
             const bx = await g("brick_exclusions"); setBrickExcl(Object.fromEntries(bx.map((r) => [`${r.brick_id}|${r.scope_id}`, true])));
@@ -978,7 +978,7 @@ export default function App() {
                 if (Bk.length) { setBricks(Bk); parts.push(`${Bk.length} bricks`); }
                 if (Ob.length) { setObstacles(Ob); parts.push(`${Ob.length} obstacles`); }
                 if (Object.keys(wcMap).length) { setWaveCountry(wcMap); parts.push(`${Object.keys(wcMap).length} wave→country`); }
-                if (Object.keys(obuMap).length) { setOfferBU(obuMap); parts.push(`${Object.keys(obuMap).length} offer→BU`); }
+                if (Object.keys(obuMap).length) { setOfferBUs(obuMap); parts.push(`${Object.keys(obuMap).length} offer→BU`); }
                 if (Object.keys(owMap).length) { setOfferWave(owMap); parts.push(`${Object.keys(owMap).length} offer→wave`); }
                 if (Object.keys(doneMap).length) { setDone(doneMap); parts.push(`${Object.keys(doneMap).length} brick checks`); }
                 else if (Bk.length) { setDone({}); } // bricks changed but no checks provided -> reset
@@ -998,7 +998,7 @@ export default function App() {
                     done: Object.keys(doneMap).length ? doneMap : (Bk.length ? {} : done),
                     brickExcl,
                     obstacles: Ob.length ? Ob : obstacles,
-                    offerBU: Object.keys(obuMap).length ? obuMap : offerBU,
+                    offerBUs: Object.keys(obuMap).length ? obuMap : offerBUs,
                     waveCountry: Object.keys(wcMap).length ? wcMap : waveCountry,
                     offerWave: Object.keys(owMap).length ? owMap : offerWave,
                 };
@@ -1049,7 +1049,7 @@ export default function App() {
                 onAdd={() => setBUs([...bus, { id: gid(), name: "New unit" }])} onChange={(id, p) => setBUs(bus.map((x) => x.id === id ? { ...x, ...p } : x))} onDel={(id) => setBUs(bus.filter((x) => x.id !== id))} />
 
             <h3 className="mb-2 mt-4 text-sm font-bold uppercase tracking-wide" style={{ color: C.soft }}>Mappings</h3>
-            <Matrix title="Offers → Business Units" rows={offers} cols={bus} map={offerBU} setMap={setOfferBU} bg={C.blue} />
+            <Matrix title="Offers → Business Units" rows={offers} cols={bus} map={offerBUs} setMap={setOfferBUs} bg={C.blue} />
             <Matrix title="Waves → Countries" rows={waves} cols={countries} map={waveCountry} setMap={setWaveCountry} bg={C.green} />
             <Matrix title="Offers → Waves" rows={offers} cols={waves} map={offerWave} setMap={setOfferWave} bg={C.yellow} />
 
