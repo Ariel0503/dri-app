@@ -468,7 +468,6 @@ export default function App() {
             await sync("offers", D.offers.map((o) => ({ id: o.id, name: o.name })), ["id"]);
             await sync("business_units", D.bus.map((b, i) => ({ id: b.id, name: b.name, sort_order: i })), ["id"]);
             await sync("blocks", D.blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })), ["id"]);
-            await sync("offer_business_units", D.offer_business_units.map((b, i) => ({ id: b.id, offer_id: b.offerId, business_unit_id: b.businessUnitId, sort_order: i })), ["id"]);
             await sync("bricks", D.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })), ["id"]);
             // block scope: one row per scoped block. block_assignments is the only
             // target with a synthetic `id` PK and no natural unique key, so it can't
@@ -510,10 +509,10 @@ export default function App() {
             }
 
             // --- link tables (presence only -> insert-or-ignore, prune removals) -
-            await sync("offer_business_units", keysTrue(D.offerBU).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
-            await sync("wave_countries", keysTrue(D.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
-            await sync("offer_waves", keysTrue(D.offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
-            await sync("brick_exclusions", keysTrue(D.brickExcl).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
+            await sync("offer_business_units", D.offer_business_units.map((b, i) => ({ id: b.id, offer_id: b.offerId, business_unit_id: b.businessUnitId, sort_order: i })), ["id"]);
+            await sync("wave_countries", keysTrue(D.waveCountry).map(([id, wave_id, country_id]) => ({ id,wave_id, country_id })), ["id","wave_id", "country_id"], false);
+            await sync("offer_waves", keysTrue(D.offerWave).map(([id,offer_id, wave_id]) => ({ id,offer_id, wave_id })), ["id","offer_id", "wave_id"], false);
+            await sync("brick_exclusions", keysTrue(D.brickExcl).map(([id, brick_id, scope_id]) => ({ id, brick_id, scope_id })), ["id", "brick_id", "scope_id"], false);
 
             // brick_checks: per (country, wave, brick). updated_by is stamped when
             // userId is a valid UUID (a real profiles.id). merge so checked +
