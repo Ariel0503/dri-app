@@ -481,7 +481,7 @@ export default function App() {
                     : { block_id: b.id, wave_id: b.scope, offer_id: null });
                 const existing = [];
                 for (let from = 0; ; from += 1000) {
-                    const { data, error } = await sb.from("block_assignments").select("id,block_id,wave_id,offer_id").range(from, from + 999);
+                    const { data, error } = await sb.from("block_assignments").select("id,block_id,wave_id,offer_id,country_id").range(from, from + 999);
                     if (error) throw new Error(`block_assignments (read): ${error.message}`);
                     existing.push(...(data || []));
                     if (!data || data.length < 1000) break;
@@ -493,7 +493,7 @@ export default function App() {
                     const cur = byBlock[row.block_id];
                     if (cur) {
                         if (cur.wave_id !== row.wave_id || cur.offer_id !== row.offer_id) {
-                            const { error } = await sb.from("block_assignments").update({ wave_id: row.wave_id, offer_id: row.offer_id }).eq("id", cur.id);
+                            const { error } = await sb.from("block_assignments").update({ wave_id: row.wave_id, offer_id: row.offer_id, country_id: row.country_id  }).eq("id", cur.id);
                             if (error) throw new Error(`block_assignments (update): ${error.message}`);
                         }
                     } else {
@@ -519,7 +519,7 @@ export default function App() {
             await sync("wave_countries", keysTrue(D.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
             await sync("offer_waves", keysTrue(D.offerWave).mmap(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
             await sync("brick_exclusions", keysTrue(D.brickExcl).mmap(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
-
+            await sync("block_assignments", keysTrue(D.blockAssignments).mmap(([block_id, wave_id, offer_id, country_id]) => ({ block_id, wave_id, offer_id, country_id })), ["block_id", "wave_id", "offer_id", "country_id"], false);
             // brick_checks: per (country, wave, brick). updated_by is stamped when
             // userId is a valid UUID (a real profiles.id). merge so checked +
             // updated_by update in place rather than churning rows.
