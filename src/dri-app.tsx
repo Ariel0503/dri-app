@@ -3,7 +3,7 @@ import { Gauge, AlertTriangle, Layers, FileBarChart, Settings as Cog, ChevronDow
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import * as XLSX from "xlsx";
 // STATIC import: Vite compiles the client into the main chunk, so there is no
-// runtime chunk to fetch — this is what kills the "/assets/supabaseClient 404".
+// runtime chunk to fetch this is what kills the "/assets/supabaseClient 404".
 // (The previous `await import(/* @vite-ignore */ path)` told Vite NOT to bundle
 // it, leaving a bare path the browser then 404'd on.) `supabase` is the client
 // when VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY were set at build time, else
