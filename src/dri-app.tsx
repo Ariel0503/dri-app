@@ -424,7 +424,7 @@ export default function App() {
                 blocks: d.blocks.map((b) => ({ ...b, scope: msc(b.scope) })),  // scope -> a wave/offer id
                 bricks: d.bricks,                                              // keyed by id; blockId unchanged
                 done: mmap(d.done),                 // country|wave|brick -> country & wave remapped
-                brickExcl: map(d.brickExcl),       // brick|scope        -> scope(wave/offer) remapped
+                brickExcl: mmap(d.brickExcl),       // brick|scope        -> scope(wave/offer) remapped
                 obstacles: d.obstacles.map((o) => ({ ...o, countryId: mid(o.countryId), waveId: mid(o.waveId) })),
                 offerBU: mmap(d.offerBU),           // offer|bu           -> both remapped
                 waveCountry: mmap(d.waveCountry),   // wave|country       -> both remapped
@@ -509,10 +509,16 @@ export default function App() {
             }
 
             // --- link tables (presence only -> insert-or-ignore, prune removals) -
-            await sync("offer_business_units", D.offerbBUs.mmap((b, i) => ({ id: b.id, offer_id: b.offerId, business_unit_id: b.businessUnitId, sort_order: i })), ["id"]);
-            await sync("wave_countries", keysTrue(D.waveCountry).map(([id, wave_id, country_id]) => ({ id,wave_id, country_id })), ["id","wave_id", "country_id"], false);
-            await sync("offer_waves", keysTrue(D.offerWave).map(([id,offer_id, wave_id]) => ({ id,offer_id, wave_id })), ["id","offer_id", "wave_id"], false);
-            await sync("brick_exclusions", keysTrue(D.brickExcl).map(([id, brick_id, scope_id]) => ({ id, brick_id, scope_id })), ["id", "brick_id", "scope_id"], false);
+            // Each table now has a surrogate `id uuid primary key default
+            // gen_random_uuid()` PLUS a UNIQUE constraint on its natural key. We do
+            // NOT send `id` — the DB fills it. We upsert/prune on the NATURAL KEY,
+            // so re-saving the same pair conflicts on that unique constraint and is
+            // ignored/updated in place (never a new id). keysTrue() yields the split
+            // key as a 2-element array; destructure exactly two.
+            await sync("offer_business_units", keysTrue(D.offerBU).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
+            await sync("wave_countries", keysTrue(D.waveCountry).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
+            await sync("offer_waves", keysTrue(D.offerWave).map(([offer_id, wave_id]) => ({ offer_id, wave_id })), ["offer_id", "wave_id"], false);
+            await sync("brick_exclusions", keysTrue(D.brickExcl).map(([brick_id, scope_id]) => ({ brick_id, scope_id })), ["brick_id", "scope_id"], false);
 
             // brick_checks: per (country, wave, brick). updated_by is stamped when
             // userId is a valid UUID (a real profiles.id). merge so checked +
@@ -522,11 +528,13 @@ export default function App() {
             await sync("brick_checks", bcRows, ["country_id", "wave_id", "brick_id"], true);
 
             // --- obstacles + their link tables ----------------------------------
+            // Link tables carry a surrogate id (DB default) + a UNIQUE natural key.
+            // Send only the natural-key columns; upsert/prune on that key.
             await sync("obstacles", D.obstacles.map((o) => ({ id: o.id, title: o.title, owner: o.owner, severity: sevToDb(o.severity), resolution: o.resolution, status: "open" })), ["id"]);
-            await sync("obstacle_countries", D.obstacles.filter((o) => o.countryId).map((o) => ({ id: o.id, obstacle_id: o.id, country_id: o.countryId })), ["id","obstacle_id", "country_id"], false);
-            await sync("obstacle_waves", D.obstacles.filter((o) => o.waveId).map((o) => ({ id: o.id, obstacle_id: o.id, wave_id: o.waveId })), ["id","obstacle_id", "wave_id"], false);
-            await sync("obstacle_impacts", D.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ id: o.id, obstacle_id: o.id, blocked_obstacle_id: b }))), ["id","obstacle_id", "blocked_obstacle_id"], false);
-            await sync("obstacle_blocks", D.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ id: o.id, obstacle_id: o.id, block_id: b }))), ["id","obstacle_id", "block_id"], false);
+            await sync("obstacle_countries", D.obstacles.filter((o) => o.countryId).map((o) => ({ obstacle_id: o.id, country_id: o.countryId })), ["obstacle_id", "country_id"], false);
+            await sync("obstacle_waves", D.obstacles.filter((o) => o.waveId).map((o) => ({ obstacle_id: o.id, wave_id: o.waveId })), ["obstacle_id", "wave_id"], false);
+            await sync("obstacle_impacts", D.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ obstacle_id: o.id, blocked_obstacle_id: b }))), ["obstacle_id", "blocked_obstacle_id"], false);
+            await sync("obstacle_blocks", D.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ obstacle_id: o.id, block_id: b }))), ["obstacle_id", "block_id"], false);
 
             setSaveState({ status: "saved", at: `${todayStr()} ${new Date().toLocaleTimeString()}` });
             return true;
