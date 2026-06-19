@@ -212,7 +212,7 @@ begin
     execute format('drop policy if exists "auth_read" on %I;', t);
     execute format('drop policy if exists "editor_write" on %I;', t);
     execute format('create policy "auth_read" on %I for select to authenticated using (true);', t);
-    execute format('create policy "editor_write" on %I for insert, update, delete to authenticated
+    execute format('create policy "editor_write" on %I for all to authenticated
        using (true) with check (public.can_write());', t);
   end loop;
 end $$;
