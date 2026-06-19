@@ -78,19 +78,19 @@ create table if not exists business_units (
   id uuid primary key default gen_random_uuid(), name text not null, sort_order int not null default 0);
 
 create table if not exists offer_business_units (
-  id uuid primary key default gen_random_uuid(),
+  id uuid default gen_random_uuid(),
   offer_id uuid not null references offers(id) on delete cascade,
   bu_id    uuid not null references business_units(id) on delete cascade,
   primary key (offer_id, bu_id));
 
 create table if not exists wave_countries (
-  id uuid primary key default gen_random_uuid(),
+  id uuid default gen_random_uuid(),
   wave_id uuid not null references waves(id) on delete cascade,
   country_id uuid not null references countries(id) on delete cascade,
   primary key (wave_id, country_id));
 
 create table if not exists offer_waves (
-  id uuid primary key default gen_random_uuid(),
+  id uuid default gen_random_uuid(),
   offer_id uuid not null references offers(id) on delete cascade,
   wave_id  uuid not null references waves(id) on delete cascade,
   primary key (offer_id, wave_id));
@@ -102,7 +102,7 @@ create table if not exists wave_assignments (
   go_live_date date, unique (country_id, wave_id));
 
 create table if not exists wave_assignment_deliveries (
-  id uuid primary key default gen_random_uuid(),
+  id uuid default gen_random_uuid(),
   assignment_id uuid not null references wave_assignments(id) on delete cascade,
   bu_id uuid not null references business_units(id) on delete cascade,
   primary key (assignment_id, bu_id));
@@ -329,7 +329,6 @@ for all
 to authenticated
 using (can_write())
 with check (can_write());
-on conflict (id) do nothing;
 
 -- Excel import write (allow import writes as authenticated)
 drop policy if exists brick_exclusions_excel_import_write on public.brick_exclusions;
@@ -339,7 +338,6 @@ for all
 to authenticated
 using (true)
 with check (true);
-on conflict (id) do nothing;
 
 
 
@@ -355,7 +353,6 @@ for all
 to authenticated
 using (can_write())
 with check (can_write());
-on conflict (id) do nothing;
 
 -- Excel import write
 drop policy if exists offer_business_units_excel_import_write on public.offer_business_units;
@@ -365,7 +362,6 @@ for all
 to authenticated
 using (true)
 with check (true);
-on conflict (id) do nothing;
 
 
 
@@ -411,14 +407,6 @@ where  a.block_id = b.block_id
 
 create unique index if not exists block_assignments_block_id_key
   on public.block_assignments (block_id);
-
-  delete from public.offer_business_units a
-using  public.offer_business_units b
-where  a.offer_id = b.offer_id
-  and  a.id     < b.id;
-
-create unique index if not exists offer_business_units_id_key
-  on public.offer_business_units (id);
 
 -- ----------------------------------------------------------------------------
 -- Note: other link tables (offer_business_units, wave_countries, offer_waves,
