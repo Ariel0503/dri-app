@@ -433,6 +433,11 @@ create unique index if not exists block_assignments_block_id_key
 --  duplicate-name rows left from earlier attempts are pruned automatically.
 -- ============================================================================
 
+-- offer_business_units_offer_id_key is a spurious UNIQUE(offer_id) constraint
+-- that limits each offer to one BU. Drop it so multi-BU offers can be saved.
+alter table if exists public.offer_business_units drop constraint if exists offer_business_units_offer_id_key;
+drop index if exists public.offer_business_units_offer_id_key;
+
 drop index if exists public.regions_name_unique;
 drop index if exists public.countries_name_unique;
 drop index if exists public.blocks_name_unique;
