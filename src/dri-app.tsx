@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Gauge, AlertTriangle, Layers, FileBarChart, Settings as Cog, ChevronDown, ChevronRight, Plus, Trash2, Download, Calendar, GitBranch, List, Upload, FileDown, CheckSquare, Square, Save, LogOut, Lock, Pencil, CheckCheck, Eraser } from "lucide-react";
+import { Gauge, AlertTriangle, Layers, FileBarChart, Settings as Cog, ChevronDown, ChevronRight, Plus, Trash2, Download, Calendar, Upload, FileDown, CheckSquare, Square, Save, LogOut, Lock, Pencil, CheckCheck, Eraser } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import * as XLSX from "xlsx";
 // STATIC import: Vite compiles the client into the main chunk, so there is no
@@ -339,7 +339,6 @@ export default function App() {
     const [fSev, setFSev] = useState("All");
     const [fCountry, setFCountry] = useState("All");
     const [fWave, setFWave] = useState("All");
-    const [view, setView] = useState("list");
     const [obDraft, setObDraft] = useState(null);
     const [openB3, setOpenB3] = useState({});
     const [openBrickScope, setOpenBrickScope] = useState({});
@@ -347,7 +346,7 @@ export default function App() {
     const [m4Wave, setM4Wave] = useState(seedWaves[0]?.id);
     // Module 1 view controls: region filter + "by wave" / "by region" view mode.
     const [m1Region, setM1Region] = useState("all");
-    const [m1View, setM1View] = useState("wave"); // "wave" = detailed per-wave; "region" = country×wave grid
+    const [m1View, setM1View] = useState("region"); // "region" = overview grid; "wave" = detailed per-wave
     // Settings: draft for adding a tool-assignment matrix row.
     const [taDraft, setTaDraft] = useState({ toolId: "", regionId: "all", countryId: "all", offerId: "all", waveId: "all" });
     const [taMsg, setTaMsg] = useState("");
@@ -733,40 +732,54 @@ export default function App() {
                     <button title="Mark all milestones done" aria-label={`Mark all milestones done for ${c.name}`} onClick={() => setCountryAll(c.id, wid, true)} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.low }}><CheckCheck size={16} /></button>
                     <button title="Clear all milestones" aria-label={`Clear all milestones for ${c.name}`} onClick={() => setCountryAll(c.id, wid, false)} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.soft }}><Eraser size={16} /></button>
                 </div>
-                {open && (
-                    <div className="mt-3 grid gap-2 border-t pt-3" style={{ borderColor: C.line }}>
-                        {units.length === 0 && <span className="text-xs" style={{ color: C.soft }}>No blocks or tools apply to this country in this wave.</span>}
-                        {units.map((u) => {
-                            const sc = unitScore(c.id, wid, u.bricks);
-                            const okey = `${c.id}|${wid}|${u.id}`, bopen = openBlock[okey];
-                            return (
-                                <div key={u.id} className="rounded-lg p-2" style={{ background: C.white }}>
-                                    <button className="flex w-full items-center gap-2 rounded text-left focus:outline-none focus:ring-2" aria-expanded={!!bopen} onClick={() => setOpenBlock({ ...openBlock, [okey]: !bopen })}>
-                                        {bopen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
-                                        <span className="w-44 text-sm font-medium" style={{ color: C.ink }}>{u.name}</span>
-                                        <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: u.kind === "tool" ? C.yellow : C.green, color: C.soft }}>{u.kind}</span>
-                                        <span className="text-xs" style={{ color: C.soft }}>weight {u.weight}</span>
-                                        <div className="h-2 flex-1 overflow-hidden rounded-full" style={{ background: C.line }}><div className="h-full" style={{ width: `${sc}%`, background: status(sc).c }} /></div>
-                                        <span className="w-10 text-right text-sm font-semibold" style={{ color: C.ink }}>{sc}%</span>
-                                    </button>
-                                    {bopen && (
-                                        <div className="mt-2 grid gap-1 pl-6">
-                                            {u.bricks.length ? u.bricks.map((brick) => {
-                                                const dkey = `${c.id}|${wid}|${brick.id}`, d = !!done[dkey];
-                                                return (
-                                                    <button key={brick.id} className="flex items-center gap-2 rounded text-left text-sm focus:outline-none focus:ring-2" onClick={() => setDone({ ...done, [dkey]: !d })}>
-                                                        {d ? <CheckSquare size={16} aria-hidden style={{ color: C.low }} /> : <Square size={16} aria-hidden style={{ color: C.soft }} />}
-                                                        <span style={{ color: C.ink, textDecoration: d ? "line-through" : "none" }}>{brick.name}</span>
-                                                    </button>
-                                                );
-                                            }) : <span className="text-xs" style={{ color: C.soft }}>No milestones apply here in this wave.</span>}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                )}
+                {open && (() => {
+                    const blockUnits = units.filter(u => u.kind !== "tool");
+                    const toolUnits = units.filter(u => u.kind === "tool");
+                    const renderUnit = (u) => {
+                        const sc = unitScore(c.id, wid, u.bricks);
+                        const okey = `${c.id}|${wid}|${u.id}`, bopen = openBlock[okey];
+                        return (
+                            <div key={u.id} className="rounded-lg p-2" style={{ background: C.white }}>
+                                <button className="flex w-full items-center gap-2 rounded text-left focus:outline-none focus:ring-2" aria-expanded={!!bopen} onClick={() => setOpenBlock({ ...openBlock, [okey]: !bopen })}>
+                                    {bopen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+                                    <span className="w-44 text-sm font-medium" style={{ color: C.ink }}>{u.name}</span>
+                                    <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: u.kind === "tool" ? C.yellow : C.green, color: C.soft }}>{u.kind}</span>
+                                    <span className="text-xs" style={{ color: C.soft }}>weight {u.weight}</span>
+                                    <div className="h-2 flex-1 overflow-hidden rounded-full" style={{ background: C.line }}><div className="h-full" style={{ width: `${sc}%`, background: status(sc).c }} /></div>
+                                    <span className="w-10 text-right text-sm font-semibold" style={{ color: C.ink }}>{sc}%</span>
+                                </button>
+                                {bopen && (
+                                    <div className="mt-2 grid gap-1 pl-6">
+                                        {u.bricks.length ? u.bricks.map((brick) => {
+                                            const dkey = `${c.id}|${wid}|${brick.id}`, d = !!done[dkey];
+                                            return (
+                                                <button key={brick.id} className="flex items-center gap-2 rounded text-left text-sm focus:outline-none focus:ring-2" onClick={() => setDone({ ...done, [dkey]: !d })}>
+                                                    {d ? <CheckSquare size={16} aria-hidden style={{ color: C.low }} /> : <Square size={16} aria-hidden style={{ color: C.soft }} />}
+                                                    <span style={{ color: C.ink, textDecoration: d ? "line-through" : "none" }}>{brick.name}</span>
+                                                </button>
+                                            );
+                                        }) : <span className="text-xs" style={{ color: C.soft }}>No milestones apply here in this wave.</span>}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    };
+                    return (
+                        <div className="mt-3 grid gap-2 border-t pt-3" style={{ borderColor: C.line }}>
+                            {units.length === 0 && <span className="text-xs" style={{ color: C.soft }}>No blocks or tools apply to this country in this wave.</span>}
+                            {blockUnits.map(renderUnit)}
+                            {toolUnits.length > 0 && (
+                                <>
+                                    <div className="mt-1 flex items-center gap-2 rounded-lg px-2 py-1" style={{ background: C.yellow + "66" }}>
+                                        <span className="text-xs font-bold uppercase tracking-wide" style={{ color: C.soft }}>Tool setup</span>
+                                        <span className="text-xs" style={{ color: C.soft }}>· weight applied indirectly</span>
+                                    </div>
+                                    {toolUnits.map(renderUnit)}
+                                </>
+                            )}
+                        </div>
+                    );
+                })()}
             </Card>
         );
     };
@@ -777,7 +790,7 @@ export default function App() {
             <div className="mb-4 flex flex-wrap items-end gap-3">
                 <Field label="View">
                     <div className="inline-flex overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }} role="group" aria-label="Readiness view">
-                        {[["wave", "By wave"], ["region", "By region"]].map(([val, lbl]) => (
+                        {[["region", "By region"], ["wave", "By wave"]].map(([val, lbl]) => (
                             <button key={val} onClick={() => setM1View(val)} aria-pressed={m1View === val}
                                 className="px-3 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2"
                                 style={{ background: m1View === val ? C.mid : C.white, color: m1View === val ? C.white : C.soft }}>{lbl}</button>
@@ -883,46 +896,6 @@ export default function App() {
         setObDraft(null);
     };
 
-    const renderGraph = () => {
-        const ids = new Set(filtered.map((o) => o.id));
-        const edges = [];
-        filtered.forEach((o) => (o.blocks || []).forEach((t) => { if (ids.has(t)) edges.push({ from: o.id, to: t }); }));
-        const depth = {} as Record<string, number>;
-        filtered.forEach((o) => { depth[o.id] = 0; });
-        for (let i = 0; i < filtered.length; i++) edges.forEach((e) => { depth[e.to] = Math.max(depth[e.to], depth[e.from] + 1); });
-        const byDepth = {} as Record<number, string[]>;
-        filtered.forEach((o) => { const d = depth[o.id]; (byDepth[d] ||= []).push(o.id); });
-        const pos = {} as Record<string, { x: number; y: number }>;
-        Object.keys(byDepth).forEach((d) => byDepth[Number(d)].forEach((id, i) => { pos[id] = { x: Number(d), y: i }; }));
-        const colW = 230, rowH = 90, nodeW = 190, nodeH = 56;
-        const maxD = Math.max(0, ...filtered.map((o) => depth[o.id]));
-        const maxR = Math.max(1, ...Object.values(byDepth).map((a) => a.length));
-        const W = (maxD + 1) * colW + 20, H = maxR * rowH + 20;
-        const cx = (id) => pos[id].x * colW + 20, cy = (id) => pos[id].y * rowH + 20;
-        return (
-            <Card bg={C.white}>
-                <p className="mb-2 text-sm" style={{ color: C.soft }}>Arrows point from an obstacle to what it blocks. Left = upstream (resolve first).</p>
-                <div className="overflow-auto" style={{ maxWidth: "100%" }}>
-                    <svg width={W} height={H} role="img" aria-label="Obstacle dependency graph; see list view for a text equivalent" style={{ minWidth: W }}>
-                        <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill={C.soft} /></marker></defs>
-                        {edges.map((e, i) => {
-                            const x1 = cx(e.from) + nodeW, y1 = cy(e.from) + nodeH / 2, x2 = cx(e.to), y2 = cy(e.to) + nodeH / 2, mx = (x1 + x2) / 2;
-                            return <path key={i} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 2},${y2}`} fill="none" stroke={C.soft} strokeWidth={2} markerEnd="url(#ar)" />;
-                        })}
-                        {filtered.map((o) => (
-                            <g key={o.id}>
-                                <rect x={cx(o.id)} y={cy(o.id)} width={nodeW} height={nodeH} rx={10} fill={SEV[o.severity] + "22"} stroke={SEV[o.severity]} strokeWidth={2} />
-                                <text x={cx(o.id) + 10} y={cy(o.id) + 20} fontSize="11" fontWeight="700" fill={SEV[o.severity]}>{o.severity}</text>
-                                <text x={cx(o.id) + 10} y={cy(o.id) + 38} fontSize="11" fill={C.ink}>{o.title.length > 26 ? o.title.slice(0, 24) + "…" : o.title}</text>
-                            </g>
-                        ))}
-                    </svg>
-                </div>
-                {!filtered.length && <p className="text-sm" style={{ color: C.soft }}>No obstacles match these filters.</p>}
-            </Card>
-        );
-    };
-
     const renderM2 = () => (
         <>
             <SaveBar onSave={saveAll} state={saveState} />
@@ -931,8 +904,6 @@ export default function App() {
                 <Field label="Country"><select value={fCountry} onChange={(e) => setFCountry(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}><option value="All">All</option>{countries.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
                 <Field label="Wave"><select value={fWave} onChange={(e) => setFWave(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}><option value="All">All</option>{waves.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
                 <div className="ml-auto flex gap-2">
-                    <Btn kind={view === "list" ? "solid" : "ghost"} onClick={() => setView("list")}><List size={16} /> List</Btn>
-                    <Btn kind={view === "graph" ? "solid" : "ghost"} onClick={() => setView("graph")}><GitBranch size={16} /> Graph</Btn>
                     <Btn onClick={() => setObDraft({ _new: true, id: gid(), title: "", owner: "", severity: "Medium", countryId: countries[0]?.id, waveId: waves[0]?.id, resolution: "", blocks: [], blockIds: [] })}><Plus size={16} /> Add</Btn>
                 </div>
             </div>
@@ -941,28 +912,26 @@ export default function App() {
                 <ObstacleForm value={obDraft} onChange={setObDraft} onSave={saveDraft} onCancel={() => setObDraft(null)} countries={countries} waves={waves} blocks={blocks} obstacles={obstacles} />
             )}
 
-            {view === "graph" ? renderGraph() : (
-                <div className="grid gap-2">
-                    {filtered.map((o) => (
-                        <Card key={o.id}>
-                            <div className="flex flex-wrap items-start gap-3">
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex items-center gap-2"><SevBadge s={o.severity} /><span className="font-semibold" style={{ color: C.ink }}>{o.title}</span></div>
-                                    <p className="mt-1 text-sm" style={{ color: C.soft }}>Owner: <b style={{ color: C.ink }}>{o.owner || "—"}</b> · {nameOf(o.countryId)} · {waves.find((w) => w.id === o.waveId)?.name || "—"}</p>
-                                    <p className="mt-1 text-sm" style={{ color: C.ink }}>Resolution: {o.resolution || "—"}</p>
-                                    {(o.blockIds || []).length > 0 && <p className="mt-1 text-xs" style={{ color: C.soft }}>Affects blocks: {o.blockIds.map((id) => blocks.find((b) => b.id === id)?.name).filter(Boolean).join(", ")}</p>}
-                                    {(o.blocks || []).length > 0 && <div className="mt-2 rounded-lg p-2 text-sm" style={{ background: C.green }}><b style={{ color: C.ink }}>Blocks:</b> {o.blocks.map(obTitle).join(", ")}</div>}
-                                </div>
-                                <div className="flex gap-1">
-                                    <button aria-label={`Edit ${o.title}`} title="Edit" onClick={() => setObDraft({ ...o, blocks: [...(o.blocks || [])], blockIds: [...(o.blockIds || [])] })} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.mid }}><Pencil size={16} /></button>
-                                    <button aria-label={`Delete ${o.title}`} title="Delete" onClick={() => setObstacles(obstacles.filter((x) => x.id !== o.id))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={16} /></button>
-                                </div>
+            <div className="grid gap-2">
+                {filtered.map((o) => (
+                    <Card key={o.id}>
+                        <div className="flex flex-wrap items-start gap-3">
+                            <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2"><SevBadge s={o.severity} /><span className="font-semibold" style={{ color: C.ink }}>{o.title}</span></div>
+                                <p className="mt-1 text-sm" style={{ color: C.soft }}>Owner: <b style={{ color: C.ink }}>{o.owner || "—"}</b> · {nameOf(o.countryId)} · {waves.find((w) => w.id === o.waveId)?.name || "—"}</p>
+                                <p className="mt-1 text-sm" style={{ color: C.ink }}>Resolution: {o.resolution || "—"}</p>
+                                {(o.blockIds || []).length > 0 && <p className="mt-1 text-xs" style={{ color: C.soft }}>Affects blocks: {o.blockIds.map((id) => blocks.find((b) => b.id === id)?.name).filter(Boolean).join(", ")}</p>}
+                                {(o.blocks || []).length > 0 && <div className="mt-2 rounded-lg p-2 text-sm" style={{ background: C.green }}><b style={{ color: C.ink }}>Blocks:</b> {o.blocks.map(obTitle).join(", ")}</div>}
                             </div>
-                        </Card>
-                    ))}
-                    {!filtered.length && <p className="text-sm" style={{ color: C.soft }}>No obstacles match these filters.</p>}
-                </div>
-            )}
+                            <div className="flex gap-1">
+                                <button aria-label={`Edit ${o.title}`} title="Edit" onClick={() => setObDraft({ ...o, blocks: [...(o.blocks || [])], blockIds: [...(o.blockIds || [])] })} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.mid }}><Pencil size={16} /></button>
+                                <button aria-label={`Delete ${o.title}`} title="Delete" onClick={() => setObstacles(obstacles.filter((x) => x.id !== o.id))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={16} /></button>
+                            </div>
+                        </div>
+                    </Card>
+                ))}
+                {!filtered.length && <p className="text-sm" style={{ color: C.soft }}>No obstacles match these filters.</p>}
+            </div>
         </>
     );
 
@@ -1046,7 +1015,8 @@ export default function App() {
                             <div className="flex flex-wrap items-center gap-2">
                                 <button aria-label="Toggle milestones" onClick={() => setOpenB3({ ...openB3, [tl.id]: !open })} className="rounded p-1 focus:outline-none focus:ring-2">{open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</button>
                                 <span className="min-w-0 flex-1 font-medium" style={{ color: C.ink }}>{tl.name}</span>
-                                <span className="text-xs" style={{ color: C.soft }}>weight {Number(tl.weight) || 0}</span>
+                                <span className="text-sm" style={{ color: C.ink }}>Weight</span>
+                                <input type="number" min={0} max={100} value={tl.weight ?? 0} aria-label={`${tl.name} weight`} onChange={(e) => setTools(tools.map((x) => x.id === tl.id ? { ...x, weight: Number(e.target.value) || 0 } : x))} className="w-16 rounded-lg px-2 py-1.5" style={inputStyle} />
                                 <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: C.white, color: C.soft }}>{tbk.length} milestone{tbk.length !== 1 ? "s" : ""}</span>
                             </div>
                             {open && (
@@ -1070,12 +1040,12 @@ export default function App() {
     );
 
     /* ======================= MODULE 4 — SteerCo Pack ======================= */
-    const m4C = countries.filter((c) => c.regionId === m4Region);
+    const m4C = countries.filter((c) => c.regionId === m4Region && !!waveCountry[`${m4Wave}|${c.id}`]);
     const chartData = m4C.map((c) => ({ name: c.name, readiness: readiness(c.id, m4Wave) }));
     const m4Ob = obstacles.filter((o) => m4C.some((c) => c.id === o.countryId) && o.waveId === m4Wave).sort((a, b) => sevRank[b.severity] - sevRank[a.severity]).slice(0, 3);
     const avg = chartData.length ? Math.round(chartData.reduce((a, d) => a + d.readiness, 0) / chartData.length) : 0;
     const readyCount = chartData.filter((d) => d.readiness >= 80).length;
-    const highCount = obstacles.filter((o) => m4C.some((c) => c.id === o.countryId) && o.severity === "High").length;
+    const highCount = obstacles.filter((o) => m4C.some((c) => c.id === o.countryId) && o.waveId === m4Wave && o.severity === "High").length;
     const regionName = regions.find((r) => r.id === m4Region)?.name || "";
 
     const downloadPNG = () => {
@@ -1108,6 +1078,47 @@ export default function App() {
         XLSX.writeFile(wb, `steerco_pack_${regionName}_${todayStr().replace(/\//g, "-")}.xlsx`);
     };
 
+    const downloadPDF = () => {
+        const waveName = waves.find((w) => w.id === m4Wave)?.name || "";
+        const w = window.open("", "_blank");
+        if (!w) { setImportMsg("Pop-up blocked — allow pop-ups and try again."); return; }
+        const rows = (arr, cols) => arr.map((r, i) => `<tr>${cols.map((c) => `<td>${c(r, i)}</td>`).join("")}</tr>`).join("");
+        w.document.write(`<!DOCTYPE html><html><head><title>SteerCo Pack – ${regionName} / ${waveName}</title>
+<style>
+  body{font-family:system-ui,sans-serif;padding:28px 36px;color:#1f2a44;max-width:800px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}p.sub{color:#51607d;font-size:12px;margin:0 0 20px}
+  h2{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#51607d;margin:20px 0 8px;border-bottom:1px solid #c3d0e6;padding-bottom:4px}
+  .stats{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px}
+  .stat{background:#f0f4fa;border-radius:8px;padding:10px 18px;min-width:120px}
+  .stat b{display:block;font-size:24px;color:#1f2a44}.stat span{font-size:12px;color:#51607d}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#f0f4fa;padding:6px 10px;text-align:left;font-weight:600;color:#51607d}
+  td{padding:6px 10px;border-bottom:1px solid #e5edf8;color:#1f2a44}
+  .high{color:#b23b2e}.med{color:#9a6b12}.low{color:#3a7d44}
+  @media print{body{padding:10px}}
+</style></head><body>
+<h1>SteerCo Pack — ${regionName} / ${waveName}</h1>
+<p class="sub">Generated: ${todayStr()}</p>
+<div class="stats">
+  <div class="stat"><b>${avg}%</b><span>Avg readiness</span></div>
+  <div class="stat"><b>${readyCount}/${chartData.length}</b><span>Countries ready</span></div>
+  <div class="stat"><b>${highCount}</b><span>High-severity risks</span></div>
+  <div class="stat"><b>${obstacles.filter((o) => m4C.some((c) => c.id === o.countryId)).length}</b><span>Total obstacles</span></div>
+</div>
+<h2>Readiness by Country</h2>
+<table><thead><tr><th>Country</th><th>Readiness %</th><th>Status</th></tr></thead><tbody>
+${rows(chartData, [(d) => d.name, (d) => d.readiness + "%", (d) => status(d.readiness).t])}
+</tbody></table>
+<h2>Top Obstacles</h2>
+<table><thead><tr><th>#</th><th>Severity</th><th>Obstacle</th><th>Country</th><th>Owner</th><th>Resolution</th></tr></thead><tbody>
+${rows(m4Ob, [(o, i) => String(i + 1), (o) => o.severity, (o) => o.title, (o) => nameOf(o.countryId), (o) => o.owner, (o) => o.resolution])}
+${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for this region/wave.</td></tr>" : ""}
+</tbody></table>
+</body></html>`);
+        w.document.close();
+        setTimeout(() => w.print(), 400);
+    };
+
     const renderM4 = () => (
         <>
             <SaveBar onSave={saveAll} state={saveState} />
@@ -1116,7 +1127,8 @@ export default function App() {
                 <Field label="Wave"><select value={m4Wave} onChange={(e) => setM4Wave(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>{waves.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
                 <div className="ml-auto flex gap-2">
                     <Btn kind="ghost" onClick={downloadPNG}><Download size={16} /> Graph (PNG)</Btn>
-                    <Btn onClick={downloadPack}><FileDown size={16} /> Download pack (Excel)</Btn>
+                    <Btn kind="ghost" onClick={downloadPack}><FileDown size={16} /> Excel</Btn>
+                    <Btn onClick={downloadPDF}><FileDown size={16} /> Download PDF</Btn>
                 </div>
             </div>
             {importMsg && <p className="mb-3 text-sm" style={{ color: C.high }}>{importMsg}</p>}
@@ -1313,8 +1325,7 @@ export default function App() {
                 onAdd={() => setBUs([...bus, { id: gid(), name: "New unit" }])} onChange={(id, p) => setBUs(bus.map((x) => x.id === id ? { ...x, ...p } : x))} onDel={(id) => setBUs(bus.filter((x) => x.id !== id))} />
 
             <SettingsSection title="Tools (enablers)" items={tools} bg={C.blue}
-                onAdd={() => setTools([...tools, { id: gid(), name: "New tool", weight: 0 }])} onChange={(id, p) => setTools(tools.map((x) => x.id === id ? { ...x, ...p } : x))} onDel={(id) => { setTools(tools.filter((x) => x.id !== id)); setBricks(bricks.filter((b) => b.toolId !== id)); setToolAssign(toolAssign.filter((a) => a.toolId !== id)); }}
-                extra={(it) => <span className="flex items-center gap-1"><span className="text-xs" style={{ color: C.soft }}>weight</span><input type="number" min={0} step={1} value={it.weight ?? 0} aria-label="Tool weight" onChange={(e) => setTools(tools.map((x) => x.id === it.id ? { ...x, weight: Number(e.target.value) || 0 } : x))} className="w-20 rounded-lg px-2 py-1.5 text-sm" style={inputStyle} /></span>} />
+                onAdd={() => setTools([...tools, { id: gid(), name: "New tool", weight: 0 }])} onChange={(id, p) => setTools(tools.map((x) => x.id === id ? { ...x, ...p } : x))} onDel={(id) => { setTools(tools.filter((x) => x.id !== id)); setBricks(bricks.filter((b) => b.toolId !== id)); setToolAssign(toolAssign.filter((a) => a.toolId !== id)); }} />
 
             <Card bg={C.blue} style={{ marginBottom: 16 }}>
                 <h3 className="mb-1 font-semibold" style={{ color: C.ink }}>Tool assignments · Tool × Region × Country × Offer × Wave</h3>
@@ -1414,6 +1425,40 @@ export default function App() {
             <div className="mx-auto flex max-w-6xl flex-col sm:flex-row">
                 <nav aria-label="Modules" className="flex shrink-0 flex-col p-3 sm:w-60" style={{ background: C.sidebar }}>
                     <div className="mb-4 px-2 pt-1"><div className="text-lg font-bold" style={{ color: C.white }}>Transformation</div><div className="text-xs" style={{ color: "#eef3fb" }}>Today: {todayStr()}</div></div>
+                    {(() => {
+                        const parseDMY = (s) => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s || ""); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; };
+                        const now = new Date(); now.setHours(0, 0, 0, 0);
+                        const summaries = regions.map((r) => {
+                            const rcids = countries.filter((c) => c.regionId === r.id).map((c) => c.id);
+                            const relWaves = waves.filter((w) => rcids.some((cid) => waveCountry[`${w.id}|${cid}`]));
+                            const nw = relWaves.filter((w) => { const d = parseDMY(w.deadline); return d && d >= now; })
+                                .sort((a, b) => (parseDMY(a.deadline)?.getTime() ?? 0) - (parseDMY(b.deadline)?.getTime() ?? 0))[0]
+                                || relWaves.sort((a, b) => (parseDMY(b.deadline)?.getTime() ?? 0) - (parseDMY(a.deadline)?.getTime() ?? 0))[0];
+                            if (!nw) return null;
+                            const wcs = rcids.filter((cid) => waveCountry[`${nw.id}|${cid}`]);
+                            const ravg = wcs.length ? Math.round(wcs.reduce((a, cid) => a + readiness(cid, nw.id), 0) / wcs.length) : 0;
+                            const st = status(ravg);
+                            return { r, nw, ravg, st };
+                        }).filter(Boolean);
+                        if (!summaries.length) return null;
+                        return (
+                            <div className="mb-3 hidden sm:block">
+                                <div className="mb-1 px-2 text-xs font-bold uppercase tracking-wide" style={{ color: "#c8d8f0" }}>Regions</div>
+                                {summaries.map((s) => (
+                                    <button key={s.r.id} onClick={() => { setMod("m1"); setM1Region(s.r.id); setM1View("region"); }} className="mb-1 w-full rounded-lg px-2 py-1.5 text-left focus:outline-none focus:ring-2" style={{ background: "rgba(255,255,255,0.12)" }}>
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm font-semibold" style={{ color: C.white }}>{s.r.name}</span>
+                                            <span className="text-sm font-bold" style={{ color: C.white }}>{s.ravg}%</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: s.st.c }} />
+                                            <span className="text-xs" style={{ color: "#c8d8f0" }}>{s.nw.name}</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        );
+                    })()}
                     <ul className="flex gap-1 sm:flex-col">
                         {MODULES.map(({ id, name, Icon }) => {
                             const on = id === mod; return (
