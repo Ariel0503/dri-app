@@ -114,11 +114,11 @@ seedCountries.forEach((c, ci) => seedWaves.forEach((w, wi) => seedBricks.forEach
 const seedBrickExclusions = {};
 
 const seedObstacles = [
-    { id: ID.ob1, title: "GDPR data residency unresolved", owner: "L. Martin", severity: "High", countryId: ID.cFR, waveId: ID.w1, resolution: "Legal review + regional data-centre decision", blocks: [ID.ob3, ID.ob2], blockIds: [ID.bl3] },
-    { id: ID.ob2, title: "Trainer availability shortfall", owner: "S. Klein", severity: "Medium", countryId: ID.cDE, waveId: ID.w1, resolution: "Hire 2 contract trainers by Q3", blocks: [], blockIds: [ID.bl2] },
-    { id: ID.ob3, title: "Migration tooling not localised", owner: "A. Tan", severity: "High", countryId: ID.cJP, waveId: ID.w1, resolution: "Vendor patch + UAT", blocks: [], blockIds: [ID.bl1, ID.bl4] },
-    { id: ID.ob4, title: "Sponsor turnover", owner: "R. Okafor", severity: "Low", countryId: ID.cAU, waveId: ID.w2, resolution: "Re-confirm exec sponsor", blocks: [], blockIds: [ID.bl5] },
-    { id: ID.ob5, title: "Procurement delay on infra", owner: "M. Haddad", severity: "Medium", countryId: ID.cAE, waveId: ID.w1, resolution: "Escalate to SteerCo", blocks: [ID.ob3], blockIds: [ID.bl4] },
+    { id: ID.ob1, title: "GDPR data residency unresolved", owner: "L. Martin", severity: "High", countryIds: [ID.cFR], waveIds: [ID.w1], resolution: "Legal review + regional data-centre decision", blocks: [ID.ob3, ID.ob2], blockIds: [ID.bl3] },
+    { id: ID.ob2, title: "Trainer availability shortfall", owner: "S. Klein", severity: "Medium", countryIds: [ID.cDE], waveIds: [ID.w1], resolution: "Hire 2 contract trainers by Q3", blocks: [], blockIds: [ID.bl2] },
+    { id: ID.ob3, title: "Migration tooling not localised", owner: "A. Tan", severity: "High", countryIds: [ID.cJP], waveIds: [ID.w1], resolution: "Vendor patch + UAT", blocks: [], blockIds: [ID.bl1, ID.bl4] },
+    { id: ID.ob4, title: "Sponsor turnover", owner: "R. Okafor", severity: "Low", countryIds: [ID.cAU], waveIds: [ID.w2], resolution: "Re-confirm exec sponsor", blocks: [], blockIds: [ID.bl5] },
+    { id: ID.ob5, title: "Procurement delay on infra", owner: "M. Haddad", severity: "Medium", countryIds: [ID.cAE], waveIds: [ID.w1], resolution: "Escalate to SteerCo", blocks: [ID.ob3], blockIds: [ID.bl4] },
 ];
 
 const seedOfferBUs = { [`${ID.o1}|${ID.u1}`]: true, [`${ID.o1}|${ID.u2}`]: true, [`${ID.o2}|${ID.u1}`]: true };
@@ -135,10 +135,10 @@ const seedToolAssign = [
     { id: ID.ta3, toolId: ID.t2, regionId: null, countryId: ID.cFR, offerId: ID.o1, waveId: null },    // Payments: France, Core Platform, any wave
 ];
 
-const SEV = { High: C.high, Medium: C.med, Low: C.low };
-const sevRank = { High: 3, Medium: 2, Low: 1 };
-const sevToDb = (s) => ({ High: "high", Medium: "medium", Low: "low" }[s] || "medium");
-const sevFromDb = (s) => ({ high: "High", critical: "High", medium: "Medium", low: "Low" }[s] || "Medium");
+const SEV = { High: C.high, "Attention needed": "#0284c7", Medium: C.med, Low: C.low };
+const sevRank = { High: 3, "Attention needed": 2.5, Medium: 2, Low: 1 };
+const sevToDb = (s) => ({ High: "high", "Attention needed": "attention_needed", Medium: "medium", Low: "low" }[s] || "medium");
+const sevFromDb = (s) => ({ high: "High", critical: "High", attention_needed: "Attention needed", medium: "Medium", low: "Low" }[s] || "Medium");
 const MODULES = [
     { id: "m1", name: "Readiness Score", Icon: Gauge },
     { id: "m2", name: "Obstacles & Risks", Icon: AlertTriangle },
@@ -247,12 +247,24 @@ const ObstacleForm = ({ value, onChange, onSave, onCancel, countries, waves, blo
             <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Title"><input value={value.title} onChange={(e) => set({ title: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle} /></Field>
                 <Field label="Owner"><input value={value.owner} onChange={(e) => set({ owner: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle} /></Field>
-                <Field label="Severity"><select value={value.severity} onChange={(e) => set({ severity: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle}>{["High", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
-                <Field label="Country"><select value={value.countryId} onChange={(e) => set({ countryId: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle}>{countries.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
-                <Field label="Wave"><select value={value.waveId} onChange={(e) => set({ waveId: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle}>{waves.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
+                <Field label="Severity"><select value={value.severity} onChange={(e) => set({ severity: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle}>{["High", "Attention needed", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
                 <Field label="Resolution path"><input value={value.resolution} onChange={(e) => set({ resolution: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle} /></Field>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                    <span className="mb-1 block text-sm font-medium" style={{ color: C.ink }}>Countries</span>
+                    <div className="flex flex-wrap gap-1">
+                        {countries.map((c) => <Chip key={c.id} on={(value.countryIds || []).includes(c.id)} onClick={() => toggle("countryIds", c.id)}>{c.name}</Chip>)}
+                        {!countries.length && <span className="text-xs" style={{ color: C.soft }}>No countries defined.</span>}
+                    </div>
+                </div>
+                <div>
+                    <span className="mb-1 block text-sm font-medium" style={{ color: C.ink }}>Waves</span>
+                    <div className="flex flex-wrap gap-1">
+                        {waves.map((w) => <Chip key={w.id} on={(value.waveIds || []).includes(w.id)} onClick={() => toggle("waveIds", w.id)}>{w.name}</Chip>)}
+                        {!waves.length && <span className="text-xs" style={{ color: C.soft }}>No waves defined.</span>}
+                    </div>
+                </div>
                 <div>
                     <span className="mb-1 block text-sm font-medium" style={{ color: C.ink }}>Affects blocks</span>
                     <div className="flex flex-wrap gap-1">
@@ -400,8 +412,21 @@ export default function App() {
 
     const readiness = (cid, wid) => {
         const us = enablers(cid, wid);
-        const totW = us.reduce((a, u) => a + u.weight, 0) || 1;
-        return Math.round(us.reduce((a, u) => a + unitScore(cid, wid, u.bricks) * u.weight, 0) / totW);
+        const blockUnits = us.filter((u) => u.kind !== "tool");
+        const toolUnits = us.filter((u) => u.kind === "tool");
+        if (!toolUnits.length) {
+            const totW = blockUnits.reduce((a, u) => a + u.weight, 0) || 1;
+            return Math.round(blockUnits.reduce((a, u) => a + unitScore(cid, wid, u.bricks) * u.weight, 0) / totW);
+        }
+        const blockTotW = blockUnits.reduce((a, u) => a + u.weight, 0);
+        const toolSetupW = Math.max(0, 100 - blockTotW);
+        const blockScore = blockTotW > 0
+            ? blockUnits.reduce((a, u) => a + unitScore(cid, wid, u.bricks) * u.weight, 0) / blockTotW : 0;
+        const toolTotW = toolUnits.reduce((a, u) => a + u.weight, 0);
+        const toolScore = toolTotW > 0
+            ? toolUnits.reduce((a, u) => a + unitScore(cid, wid, u.bricks) * u.weight, 0) / toolTotW
+            : toolUnits.reduce((a, u) => a + unitScore(cid, wid, u.bricks), 0) / toolUnits.length;
+        return Math.round((blockScore * blockTotW + toolScore * toolSetupW) / 100);
     };
     const status = (v) => v >= 80 ? { t: "Ready", c: C.low } : v >= 60 ? { t: "On track", c: C.med } : v >= 40 ? { t: "At risk", c: "#c87a1a" } : { t: "Not ready", c: C.high };
     const nameOf = (id) => countries.find((c) => c.id === id)?.name ?? "—";
@@ -484,7 +509,7 @@ export default function App() {
                 bricks: d.bricks.map((b) => ({ ...b, blockId: b.blockId ? mid(b.blockId) : null, toolId: b.toolId ? mid(b.toolId) : null })), // toolId references tools (name-resolved)
                 done: mmap(d.done),                 // country|wave|brick -> country & wave remapped
                 brickExcl: mmap(d.brickExcl),       // brick|scope        -> scope(wave/offer) remapped
-                obstacles: d.obstacles.map((o) => ({ ...o, countryId: mid(o.countryId), waveId: mid(o.waveId) })),
+                obstacles: d.obstacles.map((o) => ({ ...o, countryIds: (o.countryIds || []).map(mid), waveIds: (o.waveIds || []).map(mid) })),
                 offerBUs: mmap(d.offerBUs),           // offer|bu           -> both remapped
                 waveCountry: mmap(d.waveCountry),   // wave|country       -> both remapped
                 offerWave: mmap(d.offerWave),       // offer|wave         -> both remapped
@@ -657,8 +682,8 @@ export default function App() {
             // Link tables carry a surrogate id (DB default) + a UNIQUE natural key.
             // Send only the natural-key columns; upsert/prune on that key.
             await sync("obstacles", D.obstacles.map((o) => ({ id: o.id, title: o.title, owner: o.owner, severity: sevToDb(o.severity), resolution: o.resolution, status: "open" })), ["id"]);
-            await sync("obstacle_countries", D.obstacles.filter((o) => o.countryId).map((o) => ({ obstacle_id: o.id, country_id: o.countryId })), ["obstacle_id", "country_id"], false);
-            await sync("obstacle_waves", D.obstacles.filter((o) => o.waveId).map((o) => ({ obstacle_id: o.id, wave_id: o.waveId })), ["obstacle_id", "wave_id"], false);
+            await sync("obstacle_countries", D.obstacles.flatMap((o) => (o.countryIds || []).map((cid) => ({ obstacle_id: o.id, country_id: cid }))), ["obstacle_id", "country_id"], false);
+            await sync("obstacle_waves", D.obstacles.flatMap((o) => (o.waveIds || []).map((wid) => ({ obstacle_id: o.id, wave_id: wid }))), ["obstacle_id", "wave_id"], false);
             await sync("obstacle_impacts", D.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ obstacle_id: o.id, blocked_obstacle_id: b }))), ["obstacle_id", "blocked_obstacle_id"], false);
             await sync("obstacle_blocks", D.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ obstacle_id: o.id, block_id: b }))), ["obstacle_id", "block_id"], false);
 
@@ -697,8 +722,8 @@ export default function App() {
                 const oc = await g("obstacle_countries"), ow2 = await g("obstacle_waves"), oi = await g("obstacle_impacts"), ob2 = await g("obstacle_blocks");
                 setObstacles(Ob.map((o) => ({
                     id: o.id, title: o.title, owner: o.owner || "", severity: sevFromDb(o.severity), resolution: o.resolution || "",
-                    countryId: oc.find((x) => x.obstacle_id === o.id)?.country_id,
-                    waveId: ow2.find((x) => x.obstacle_id === o.id)?.wave_id,
+                    countryIds: oc.filter((x) => x.obstacle_id === o.id).map((x) => x.country_id),
+                    waveIds: ow2.filter((x) => x.obstacle_id === o.id).map((x) => x.wave_id),
                     blocks: oi.filter((x) => x.obstacle_id === o.id).map((x) => x.blocked_obstacle_id),
                     blockIds: ob2.filter((x) => x.obstacle_id === o.id).map((x) => x.block_id),
                 })));
@@ -768,15 +793,20 @@ export default function App() {
                         <div className="mt-3 grid gap-2 border-t pt-3" style={{ borderColor: C.line }}>
                             {units.length === 0 && <span className="text-xs" style={{ color: C.soft }}>No blocks or tools apply to this country in this wave.</span>}
                             {blockUnits.map(renderUnit)}
-                            {toolUnits.length > 0 && (
-                                <>
-                                    <div className="mt-1 flex items-center gap-2 rounded-lg px-2 py-1" style={{ background: C.yellow + "66" }}>
-                                        <span className="text-xs font-bold uppercase tracking-wide" style={{ color: C.soft }}>Tool setup</span>
-                                        <span className="text-xs" style={{ color: C.soft }}>· weight applied indirectly</span>
-                                    </div>
-                                    {toolUnits.map(renderUnit)}
-                                </>
-                            )}
+                            {toolUnits.length > 0 && (() => {
+                                const blockTotW = blockUnits.reduce((a, u) => a + u.weight, 0);
+                                const toolSetupW = Math.max(0, 100 - blockTotW);
+                                return (
+                                    <>
+                                        <div className="mt-1 flex items-center gap-2 rounded-lg px-2 py-1" style={{ background: C.yellow + "66" }}>
+                                            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: C.soft }}>Tool setup</span>
+                                            <span className="text-xs" style={{ color: C.soft }}>· overall weight {toolSetupW}</span>
+                                            <span className="text-xs" style={{ color: C.soft }}>· individual weights optional</span>
+                                        </div>
+                                        {toolUnits.map(renderUnit)}
+                                    </>
+                                );
+                            })()}
                         </div>
                     );
                 })()}
@@ -843,6 +873,9 @@ export default function App() {
                     {m1Regions.map((r) => {
                         const cs = countries.filter((c) => c.regionId === r.id);
                         if (!cs.length) return null;
+                        // Only show waves that have at least one country in this region
+                        const rWaves = waves.filter((w) => cs.some((c) => waveCountry[`${w.id}|${c.id}`]));
+                        if (!rWaves.length) return null;
                         return (
                             <Card key={r.id} bg={C.green} style={{ marginBottom: 12 }}>
                                 <h3 className="mb-2 font-semibold" style={{ color: C.ink }}>{r.name}</h3>
@@ -850,14 +883,14 @@ export default function App() {
                                     <table className="text-sm" style={{ color: C.ink }}>
                                         <thead>
                                             <tr><th className="px-2 py-1 text-left font-medium" style={{ color: C.soft }}>Country</th>
-                                                {waves.map((w) => <th key={w.id} className="px-2 py-1 text-left font-medium" style={{ color: C.soft }}>{w.name}</th>)}
+                                                {rWaves.map((w) => <th key={w.id} className="px-2 py-1 text-left font-medium" style={{ color: C.soft }}>{w.name}</th>)}
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {cs.map((c) => (
                                                 <tr key={c.id}>
                                                     <td className="py-1 pr-3 font-medium">{c.name}</td>
-                                                    {waves.map((w) => {
+                                                    {rWaves.map((w) => {
                                                         const inWave = !!waveCountry[`${w.id}|${c.id}`];
                                                         if (!inWave) return <td key={w.id} className="px-2 py-1 text-center" style={{ color: C.line }}>—</td>;
                                                         const v = readiness(c.id, w.id), st = status(v);
@@ -887,7 +920,9 @@ export default function App() {
 
     /* ======================= MODULE 2 — Obstacles & Risks ======================= */
     const filtered = obstacles.filter((o) =>
-        (fSev === "All" || o.severity === fSev) && (fCountry === "All" || o.countryId === fCountry) && (fWave === "All" || o.waveId === fWave));
+        (fSev === "All" || o.severity === fSev) &&
+        (fCountry === "All" || (o.countryIds || []).includes(fCountry)) &&
+        (fWave === "All" || (o.waveIds || []).includes(fWave)));
 
     const saveDraft = () => {
         if (!obDraft.title) return;
@@ -900,11 +935,11 @@ export default function App() {
         <>
             <SaveBar onSave={saveAll} state={saveState} />
             <div className="mb-4 flex flex-wrap items-end gap-3">
-                <Field label="Severity"><select value={fSev} onChange={(e) => setFSev(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>{["All", "High", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
+                <Field label="Severity"><select value={fSev} onChange={(e) => setFSev(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>{["All", "High", "Attention needed", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
                 <Field label="Country"><select value={fCountry} onChange={(e) => setFCountry(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}><option value="All">All</option>{countries.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
                 <Field label="Wave"><select value={fWave} onChange={(e) => setFWave(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}><option value="All">All</option>{waves.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
                 <div className="ml-auto flex gap-2">
-                    <Btn onClick={() => setObDraft({ _new: true, id: gid(), title: "", owner: "", severity: "Medium", countryId: countries[0]?.id, waveId: waves[0]?.id, resolution: "", blocks: [], blockIds: [] })}><Plus size={16} /> Add</Btn>
+                    <Btn onClick={() => setObDraft({ _new: true, id: gid(), title: "", owner: "", severity: "Medium", countryIds: [], waveIds: [], resolution: "", blocks: [], blockIds: [] })}><Plus size={16} /> Add</Btn>
                 </div>
             </div>
 
@@ -918,13 +953,13 @@ export default function App() {
                         <div className="flex flex-wrap items-start gap-3">
                             <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2"><SevBadge s={o.severity} /><span className="font-semibold" style={{ color: C.ink }}>{o.title}</span></div>
-                                <p className="mt-1 text-sm" style={{ color: C.soft }}>Owner: <b style={{ color: C.ink }}>{o.owner || "—"}</b> · {nameOf(o.countryId)} · {waves.find((w) => w.id === o.waveId)?.name || "—"}</p>
+                                <p className="mt-1 text-sm" style={{ color: C.soft }}>Owner: <b style={{ color: C.ink }}>{o.owner || "—"}</b> · {(o.countryIds || []).map(nameOf).filter(Boolean).join(", ") || "—"} · {(o.waveIds || []).map((wid) => waves.find((w) => w.id === wid)?.name).filter(Boolean).join(", ") || "—"}</p>
                                 <p className="mt-1 text-sm" style={{ color: C.ink }}>Resolution: {o.resolution || "—"}</p>
                                 {(o.blockIds || []).length > 0 && <p className="mt-1 text-xs" style={{ color: C.soft }}>Affects blocks: {o.blockIds.map((id) => blocks.find((b) => b.id === id)?.name).filter(Boolean).join(", ")}</p>}
                                 {(o.blocks || []).length > 0 && <div className="mt-2 rounded-lg p-2 text-sm" style={{ background: C.green }}><b style={{ color: C.ink }}>Blocks:</b> {o.blocks.map(obTitle).join(", ")}</div>}
                             </div>
                             <div className="flex gap-1">
-                                <button aria-label={`Edit ${o.title}`} title="Edit" onClick={() => setObDraft({ ...o, blocks: [...(o.blocks || [])], blockIds: [...(o.blockIds || [])] })} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.mid }}><Pencil size={16} /></button>
+                                <button aria-label={`Edit ${o.title}`} title="Edit" onClick={() => setObDraft({ ...o, countryIds: [...(o.countryIds || [])], waveIds: [...(o.waveIds || [])], blocks: [...(o.blocks || [])], blockIds: [...(o.blockIds || [])] })} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.mid }}><Pencil size={16} /></button>
                                 <button aria-label={`Delete ${o.title}`} title="Delete" onClick={() => setObstacles(obstacles.filter((x) => x.id !== o.id))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={16} /></button>
                             </div>
                         </div>
@@ -1042,10 +1077,10 @@ export default function App() {
     /* ======================= MODULE 4 — SteerCo Pack ======================= */
     const m4C = countries.filter((c) => c.regionId === m4Region && !!waveCountry[`${m4Wave}|${c.id}`]);
     const chartData = m4C.map((c) => ({ name: c.name, readiness: readiness(c.id, m4Wave) }));
-    const m4Ob = obstacles.filter((o) => m4C.some((c) => c.id === o.countryId) && o.waveId === m4Wave).sort((a, b) => sevRank[b.severity] - sevRank[a.severity]).slice(0, 3);
+    const m4Ob = obstacles.filter((o) => m4C.some((c) => (o.countryIds || []).includes(c.id)) && (o.waveIds || []).includes(m4Wave)).sort((a, b) => (sevRank[b.severity] ?? 0) - (sevRank[a.severity] ?? 0)).slice(0, 3);
     const avg = chartData.length ? Math.round(chartData.reduce((a, d) => a + d.readiness, 0) / chartData.length) : 0;
     const readyCount = chartData.filter((d) => d.readiness >= 80).length;
-    const highCount = obstacles.filter((o) => m4C.some((c) => c.id === o.countryId) && o.waveId === m4Wave && o.severity === "High").length;
+    const highCount = obstacles.filter((o) => m4C.some((c) => (o.countryIds || []).includes(c.id)) && (o.waveIds || []).includes(m4Wave) && o.severity === "High").length;
     const regionName = regions.find((r) => r.id === m4Region)?.name || "";
 
     const downloadPNG = () => {
@@ -1070,11 +1105,11 @@ export default function App() {
             { Metric: "Avg readiness (%)", Value: avg },
             { Metric: "Countries ready", Value: `${readyCount}/${chartData.length}` },
             { Metric: "High-severity risks", Value: highCount },
-            { Metric: "Total obstacles (region)", Value: obstacles.filter((o) => m4C.some((c) => c.id === o.countryId)).length },
+            { Metric: "Total obstacles (region)", Value: obstacles.filter((o) => m4C.some((c) => (o.countryIds || []).includes(c.id))).length },
         ];
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Summary");
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(chartData.map((d) => ({ Country: d.name, "Readiness %": d.readiness }))), "Readiness");
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(m4Ob.map((o, i) => ({ "#": i + 1, Severity: o.severity, Obstacle: o.title, Country: nameOf(o.countryId), Owner: o.owner, Resolution: o.resolution }))), "Top obstacles");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(m4Ob.map((o, i) => ({ "#": i + 1, Severity: o.severity, Obstacle: o.title, Countries: (o.countryIds || []).map(nameOf).join(", "), Owner: o.owner, Resolution: o.resolution }))), "Top obstacles");
         XLSX.writeFile(wb, `steerco_pack_${regionName}_${todayStr().replace(/\//g, "-")}.xlsx`);
     };
 
@@ -1103,7 +1138,7 @@ export default function App() {
   <div class="stat"><b>${avg}%</b><span>Avg readiness</span></div>
   <div class="stat"><b>${readyCount}/${chartData.length}</b><span>Countries ready</span></div>
   <div class="stat"><b>${highCount}</b><span>High-severity risks</span></div>
-  <div class="stat"><b>${obstacles.filter((o) => m4C.some((c) => c.id === o.countryId)).length}</b><span>Total obstacles</span></div>
+  <div class="stat"><b>${obstacles.filter((o) => m4C.some((c) => (o.countryIds || []).includes(c.id))).length}</b><span>Total obstacles</span></div>
 </div>
 <h2>Readiness by Country</h2>
 <table><thead><tr><th>Country</th><th>Readiness %</th><th>Status</th></tr></thead><tbody>
@@ -1111,7 +1146,7 @@ ${rows(chartData, [(d) => d.name, (d) => d.readiness + "%", (d) => status(d.read
 </tbody></table>
 <h2>Top Obstacles</h2>
 <table><thead><tr><th>#</th><th>Severity</th><th>Obstacle</th><th>Country</th><th>Owner</th><th>Resolution</th></tr></thead><tbody>
-${rows(m4Ob, [(o, i) => String(i + 1), (o) => o.severity, (o) => o.title, (o) => nameOf(o.countryId), (o) => o.owner, (o) => o.resolution])}
+${rows(m4Ob, [(o, i) => String(i + 1), (o) => o.severity, (o) => o.title, (o) => (o.countryIds || []).map(nameOf).join(", "), (o) => o.owner, (o) => o.resolution])}
 ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for this region/wave.</td></tr>" : ""}
 </tbody></table>
 </body></html>`);
@@ -1134,7 +1169,7 @@ ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for thi
             {importMsg && <p className="mb-3 text-sm" style={{ color: C.high }}>{importMsg}</p>}
             <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Stat label="Avg readiness" value={`${avg}%`} bg={C.blue} /><Stat label="Countries ready" value={`${readyCount}/${chartData.length}`} bg={C.green} />
-                <Stat label="High-severity risks" value={highCount} bg={C.yellow} /><Stat label="Total obstacles" value={obstacles.filter((o) => m4C.some((c) => c.id === o.countryId)).length} bg={C.blue} />
+                <Stat label="High-severity risks" value={highCount} bg={C.yellow} /><Stat label="Total obstacles" value={obstacles.filter((o) => m4C.some((c) => (o.countryIds || []).includes(c.id))).length} bg={C.blue} />
             </div>
             <Card style={{ marginBottom: 16 }}>
                 <h3 className="mb-2 font-semibold" style={{ color: C.ink }}>Readiness by country — {regionName}</h3>
@@ -1152,7 +1187,7 @@ ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for thi
             <Card bg={C.yellow}>
                 <h3 className="mb-2 font-semibold" style={{ color: C.ink }}>Top 3 obstacles — {regionName}</h3>
                 <ol className="grid gap-2">
-                    {m4Ob.map((o, i) => (<li key={o.id} className="flex items-center gap-3 rounded-lg p-2" style={{ background: C.white }}><span className="font-bold" style={{ color: C.soft }}>{i + 1}</span><SevBadge s={o.severity} /><span className="flex-1" style={{ color: C.ink }}>{o.title}</span><span className="text-sm" style={{ color: C.soft }}>{nameOf(o.countryId)}</span></li>))}
+                    {m4Ob.map((o, i) => (<li key={o.id} className="flex items-center gap-3 rounded-lg p-2" style={{ background: C.white }}><span className="font-bold" style={{ color: C.soft }}>{i + 1}</span><SevBadge s={o.severity} /><span className="flex-1" style={{ color: C.ink }}>{o.title}</span><span className="text-sm" style={{ color: C.soft }}>{(o.countryIds || []).map(nameOf).filter(Boolean).join(", ")}</span></li>))}
                     {!m4Ob.length && <li className="text-sm" style={{ color: C.soft }}>No obstacles for this region/wave.</li>}
                 </ol>
             </Card>
@@ -1216,7 +1251,11 @@ ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for thi
                 const allBricks = [...Bk, ...TBk];
                 const bkBy = {}; allBricks.forEach((b) => bkBy[b.name.toLowerCase()] = b.id);
                 const cBy = {}; Cn.forEach((c) => cBy[c.name.toLowerCase()] = c.id);
-                const Ob = sh("Obstacles").map((r) => ({ id: str(r.id) || gid(), title: str(r.title), owner: str(r.owner), severity: ["High", "Medium", "Low"].includes(str(r.severity)) ? str(r.severity) : "Medium", countryId: cBy[str(r.country).toLowerCase()] || Cn[0]?.id, waveId: wBy[str(r.wave).toLowerCase()] || W[0]?.id, resolution: str(r.resolution), blocks: [], blockIds: [] })).filter((o) => o.title);
+                const Ob = sh("Obstacles").map((r) => {
+                    const sev = str(r.severity); const validSev = ["High", "Attention needed", "Medium", "Low"];
+                    const cid = cBy[str(r.country).toLowerCase()]; const wid = wBy[str(r.wave).toLowerCase()];
+                    return { id: str(r.id) || gid(), title: str(r.title), owner: str(r.owner), severity: validSev.includes(sev) ? sev : "Medium", countryIds: cid ? [cid] : [], waveIds: wid ? [wid] : [], resolution: str(r.resolution), blocks: [], blockIds: [] };
+                }).filter((o) => o.title);
                 // checkbox sheets
                 const wcMap = {}; sh("WaveCountries").forEach((r) => { const w = wBy[str(r.wave).toLowerCase()], c = cBy[str(r.country).toLowerCase()]; if (w && c && yes(r.selected)) wcMap[`${w}|${c}`] = true; });
                 const obuMap = {}; sh("OfferBUs").forEach((r) => { const o = ofBy[str(r.offer).toLowerCase()], b = buBy[str(r.bu).toLowerCase()]; if (o && b && yes(r.selected)) obuMap[`${o}|${b}`] = true; });
