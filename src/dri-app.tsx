@@ -135,10 +135,10 @@ const seedToolAssign = [
     { id: ID.ta3, toolId: ID.t2, regionId: null, countryId: ID.cFR, offerId: ID.o1, waveId: null },    // Payments: France, Core Platform, any wave
 ];
 
-const SEV = { High: C.high, "Attention needed": "#0284c7", Medium: C.med, Low: C.low };
-const sevRank = { High: 3, "Attention needed": 2.5, Medium: 2, Low: 1 };
-const sevToDb = (s) => ({ High: "high", "Attention needed": "attention_needed", Medium: "medium", Low: "low" }[s] || "medium");
-const sevFromDb = (s) => ({ high: "High", critical: "High", attention_needed: "Attention needed", medium: "Medium", low: "Low" }[s] || "Medium");
+const SEV = { Critical: "#0284c7", High: C.high, Medium: C.med, Low: C.low };
+const sevRank = { Critical: 3.5, High: 3, Medium: 2, Low: 1 };
+const sevToDb = (s) => ({ Critical: "critical", High: "high", Medium: "medium", Low: "low" }[s] || "medium");
+const sevFromDb = (s) => ({ critical: "Critical", high: "High", attention_needed: "Critical", medium: "Medium", low: "Low" }[s] || "Medium");
 const MODULES = [
     { id: "m1", name: "Readiness Score", Icon: Gauge },
     { id: "m2", name: "Obstacles & Risks", Icon: AlertTriangle },
@@ -247,7 +247,7 @@ const ObstacleForm = ({ value, onChange, onSave, onCancel, countries, waves, blo
             <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Title"><input value={value.title} onChange={(e) => set({ title: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle} /></Field>
                 <Field label="Owner"><input value={value.owner} onChange={(e) => set({ owner: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle} /></Field>
-                <Field label="Severity"><select value={value.severity} onChange={(e) => set({ severity: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle}>{["High", "Attention needed", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
+                <Field label="Severity"><select value={value.severity} onChange={(e) => set({ severity: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle}>{["High", "Critical", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
                 <Field label="Resolution path"><input value={value.resolution} onChange={(e) => set({ resolution: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle} /></Field>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -935,7 +935,7 @@ export default function App() {
         <>
             <SaveBar onSave={saveAll} state={saveState} />
             <div className="mb-4 flex flex-wrap items-end gap-3">
-                <Field label="Severity"><select value={fSev} onChange={(e) => setFSev(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>{["All", "High", "Attention needed", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
+                <Field label="Severity"><select value={fSev} onChange={(e) => setFSev(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>{["All", "High", "Critical", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
                 <Field label="Country"><select value={fCountry} onChange={(e) => setFCountry(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}><option value="All">All</option>{countries.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
                 <Field label="Wave"><select value={fWave} onChange={(e) => setFWave(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}><option value="All">All</option>{waves.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
                 <div className="ml-auto flex gap-2">
@@ -1252,7 +1252,7 @@ ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for thi
                 const bkBy = {}; allBricks.forEach((b) => bkBy[b.name.toLowerCase()] = b.id);
                 const cBy = {}; Cn.forEach((c) => cBy[c.name.toLowerCase()] = c.id);
                 const Ob = sh("Obstacles").map((r) => {
-                    const sev = str(r.severity); const validSev = ["High", "Attention needed", "Medium", "Low"];
+                    const sev = str(r.severity); const validSev = ["High", "Critical", "Medium", "Low"];
                     const cid = cBy[str(r.country).toLowerCase()]; const wid = wBy[str(r.wave).toLowerCase()];
                     return { id: str(r.id) || gid(), title: str(r.title), owner: str(r.owner), severity: validSev.includes(sev) ? sev : "Medium", countryIds: cid ? [cid] : [], waveIds: wid ? [wid] : [], resolution: str(r.resolution), blocks: [], blockIds: [] };
                 }).filter((o) => o.title);
