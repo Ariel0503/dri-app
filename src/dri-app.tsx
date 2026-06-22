@@ -65,6 +65,10 @@ const ID = {
     bl1: uid(), bl2: uid(), bl3: uid(), bl4: uid(), bl5: uid(),
     bk1: uid(), bk2: uid(), bk3: uid(), bk4: uid(), bk5: uid(), bk6: uid(), bk7: uid(),
     ob1: uid(), ob2: uid(), ob3: uid(), ob4: uid(), ob5: uid(),
+    // tools + their setup-milestone bricks + a couple of assignment rows
+    t1: uid(), t2: uid(),
+    tbk1: uid(), tbk2: uid(), tbk3: uid(),
+    ta1: uid(), ta2: uid(), ta3: uid(),
 };
 
 const seedRegions = [{ id: ID.rEMEA, name: "EMEA" }, { id: ID.rAPAC, name: "APAC" }];
@@ -75,6 +79,11 @@ const seedCountries = [
 const seedWaves = [{ id: ID.w1, name: "Wave 1", deadline: "30/09/2026" }, { id: ID.w2, name: "Wave 2", deadline: "31/03/2027" }];
 const seedOffers = [{ id: ID.o1, name: "Core Platform" }, { id: ID.o2, name: "Analytics Add-on" }];
 const seedBUs = [{ id: ID.u1, name: "Retail" }, { id: ID.u2, name: "Corporate" }];
+// tools are enablers with their OWN setup-readiness milestones (tool bricks) and a
+// configurable weight; they are scoped via the tool-assignment matrix (region/country/
+// offer/wave), so the same tool can vary across regions and waves. Seed weight 0 keeps
+// existing seed readiness numbers unchanged until weights are set.
+const seedTools = [{ id: ID.t1, name: "CRM platform", weight: 0 }, { id: ID.t2, name: "Payments gateway", weight: 0 }];
 
 // blocks carry weight + a scope LEVEL (wave or offer); bricks are tasks inside a block
 const seedBlocks = [
@@ -92,6 +101,10 @@ const seedBricks = [
     { id: ID.bk5, name: "GDPR sign-off", blockId: ID.bl3 },
     { id: ID.bk6, name: "Provision cloud environment", blockId: ID.bl4 },
     { id: ID.bk7, name: "Confirm executive sponsor", blockId: ID.bl5 },
+    // tool milestones: a brick can belong to a TOOL instead of a block
+    { id: ID.tbk1, name: "Provision licences", toolId: ID.t1 },
+    { id: ID.tbk2, name: "Migrate accounts", toolId: ID.t1 },
+    { id: ID.tbk3, name: "Connect payment rails", toolId: ID.t2 },
 ];
 const seedDone = {};
 seedCountries.forEach((c, ci) => seedWaves.forEach((w, wi) => seedBricks.forEach((b, bi) => {
@@ -111,6 +124,16 @@ const seedObstacles = [
 const seedOfferBUs = { [`${ID.o1}|${ID.u1}`]: true, [`${ID.o1}|${ID.u2}`]: true, [`${ID.o2}|${ID.u1}`]: true };
 const seedWaveCountry = { [`${ID.w1}|${ID.cFR}`]: true, [`${ID.w1}|${ID.cDE}`]: true, [`${ID.w1}|${ID.cAE}`]: true, [`${ID.w1}|${ID.cJP}`]: true, [`${ID.w2}|${ID.cAU}`]: true, [`${ID.w2}|${ID.cFR}`]: true };
 const seedOfferWave = { [`${ID.o1}|${ID.w1}`]: true, [`${ID.o1}|${ID.w2}`]: true, [`${ID.o2}|${ID.w1}`]: true };
+
+// Tool-assignment matrix: each row has its OWN id (created outside the combination) and a
+// scope of tool × region × country × offer × wave. A null dimension means "all" — so a
+// tool can be set up overall for a region, or pinned to a single country/wave. The
+// (tool,region,country,offer,wave) COMBINATION is unique; individual dimensions repeat.
+const seedToolAssign = [
+    { id: ID.ta1, toolId: ID.t1, regionId: ID.rEMEA, countryId: null, offerId: null, waveId: ID.w1 }, // CRM: all EMEA, Wave 1
+    { id: ID.ta2, toolId: ID.t1, regionId: null, countryId: ID.cJP, offerId: null, waveId: ID.w1 },    // CRM: Japan only, Wave 1
+    { id: ID.ta3, toolId: ID.t2, regionId: null, countryId: ID.cFR, offerId: ID.o1, waveId: null },    // Payments: France, Core Platform, any wave
+];
 
 const SEV = { High: C.high, Medium: C.med, Low: C.low };
 const sevRank = { High: 3, Medium: 2, Low: 1 };
@@ -297,6 +320,8 @@ export default function App() {
     const [waves, setWaves] = useState(seedWaves);
     const [offers, setOffers] = useState(seedOffers);
     const [bus, setBUs] = useState(seedBUs);
+    const [tools, setTools] = useState(seedTools);
+    const [toolAssign, setToolAssign] = useState(seedToolAssign);
     const [blocks, setBlocks] = useState(seedBlocks);
     const [bricks, setBricks] = useState(seedBricks);
     const [done, setDone] = useState(seedDone);
@@ -320,8 +345,22 @@ export default function App() {
     const [openBrickScope, setOpenBrickScope] = useState({});
     const [m4Region, setM4Region] = useState(seedRegions[0]?.id);
     const [m4Wave, setM4Wave] = useState(seedWaves[0]?.id);
+    // Module 1 view controls: region filter + "by wave" / "by region" view mode.
+    const [m1Region, setM1Region] = useState("all");
+    const [m1View, setM1View] = useState("wave"); // "wave" = detailed per-wave; "region" = country×wave grid
+    // Settings: draft for adding a tool-assignment matrix row.
+    const [taDraft, setTaDraft] = useState({ toolId: "", regionId: "all", countryId: "all", offerId: "all", waveId: "all" });
+    const [taMsg, setTaMsg] = useState("");
     const chartRef = useRef(null);
     const [importMsg, setImportMsg] = useState("");
+
+    // Keep page selectors valid when the underlying lists change (e.g. after a DB load
+    // or an import). Without this, a stale seed id leaves a page blank until the user
+    // re-picks from a dropdown — so switching modules now shows correct data immediately.
+    useEffect(() => { if (waves.length && !waves.some((w) => w.id === m1Wave)) setM1Wave(waves[0].id); }, [waves]);
+    useEffect(() => { if (waves.length && !waves.some((w) => w.id === m4Wave)) setM4Wave(waves[0].id); }, [waves]);
+    useEffect(() => { if (m1Region !== "all" && regions.length && !regions.some((r) => r.id === m1Region)) setM1Region("all"); }, [regions]);
+    useEffect(() => { if (regions.length && !regions.some((r) => r.id === m4Region)) setM4Region(regions[0].id); }, [regions]);
 
     /* ---------- scope helpers ---------- */
     // A block applies to a (country, wave) context based on its level + scope
@@ -336,15 +375,34 @@ export default function App() {
     const brickApplies = (bl, brickId, wid) => { const sid = exclScope(bl, wid); return !(sid && brickExcl[`${brickId}|${sid}`]); };
     const applicableBricks = (bl, wid) => bricks.filter((b) => b.blockId === bl.id && brickApplies(bl, b.id, wid));
 
-    const blockScore = (cid, wid, bl) => {
-        const bs = applicableBricks(bl, wid);
-        if (!bs.length) return 0;
-        return Math.round(bs.filter((b) => done[`${cid}|${wid}|${b.id}`]).length / bs.length * 100);
+    /* ---------- tools: scoped via the assignment matrix ---------- */
+    const regionOfCountry = (cid) => countries.find((c) => c.id === cid)?.regionId;
+    // A tool applies to a (country, wave) when some assignment row matches; a null
+    // dimension on the row is a wildcard ("all"). If the row pins an offer, the offer
+    // must be active in this wave (offerWave) — keeping parity with offer-scoped blocks.
+    const toolApplies = (tl, cid, wid) => {
+        const reg = regionOfCountry(cid);
+        return (toolAssign || []).some((a) => a.toolId === tl.id
+            && (a.waveId == null || a.waveId === wid)
+            && (a.countryId == null || a.countryId === cid)
+            && (a.regionId == null || a.regionId === reg)
+            && (a.offerId == null || !!offerWave[`${a.offerId}|${wid}`]));
     };
+    const toolBricks = (tl) => bricks.filter((b) => b.toolId === tl.id);
+
+    // Unified enabler units for a (country, wave): applicable blocks + applicable tools.
+    // Each unit = { id, name, weight, kind, bricks }. Readiness is the weighted average
+    // of unit scores; a unit score = % of its applicable bricks marked done.
+    const enablers = (cid, wid) => ([
+        ...blocks.filter((bl) => blockApplies(bl, cid, wid)).map((bl) => ({ id: bl.id, name: bl.name, weight: Number(bl.weight) || 0, kind: (bl.level || "wave"), bricks: applicableBricks(bl, wid) })),
+        ...tools.filter((tl) => toolApplies(tl, cid, wid)).map((tl) => ({ id: tl.id, name: tl.name, weight: Number(tl.weight) || 0, kind: "tool", bricks: toolBricks(tl) })),
+    ]);
+    const unitScore = (cid, wid, arr) => arr.length ? Math.round(arr.filter((b) => done[`${cid}|${wid}|${b.id}`]).length / arr.length * 100) : 0;
+
     const readiness = (cid, wid) => {
-        const appl = blocks.filter((b) => blockApplies(b, cid, wid));
-        const totW = appl.reduce((a, b) => a + b.weight, 0) || 1;
-        return Math.round(appl.reduce((a, b) => a + blockScore(cid, wid, b) * b.weight, 0) / totW);
+        const us = enablers(cid, wid);
+        const totW = us.reduce((a, u) => a + u.weight, 0) || 1;
+        return Math.round(us.reduce((a, u) => a + unitScore(cid, wid, u.bricks) * u.weight, 0) / totW);
     };
     const status = (v) => v >= 80 ? { t: "Ready", c: C.low } : v >= 60 ? { t: "On track", c: C.med } : v >= 40 ? { t: "At risk", c: "#c87a1a" } : { t: "Not ready", c: C.high };
     const nameOf = (id) => countries.find((c) => c.id === id)?.name ?? "—";
@@ -356,7 +414,7 @@ export default function App() {
     // All applicable brick keys for a country in a wave (used by select/clear all)
     const countryBrickKeys = (cid, wid) => {
         const keys = [];
-        blocks.filter((bl) => blockApplies(bl, cid, wid)).forEach((bl) => applicableBricks(bl, wid).forEach((b) => keys.push(`${cid}|${wid}|${b.id}`)));
+        enablers(cid, wid).forEach((u) => u.bricks.forEach((b) => keys.push(`${cid}|${wid}|${b.id}`)));
         return keys;
     };
     const setCountryAll = (cid, wid, val) => { const n = { ...done }; countryBrickKeys(cid, wid).forEach((k) => { n[k] = val; }); setDone(n); };
@@ -370,7 +428,7 @@ export default function App() {
        userId, when a valid UUID, is stamped onto brick_checks.updated_by so each
        imported/saved check is attributed to a user (the auth user id, or the
        Meta sheet's user_id — see the import + template below). */
-    const snapshot = () => ({ regions, countries, waves, offers, bus, blocks, bricks, done, brickExcl, obstacles, offerBUs, waveCountry, offerWave });
+    const snapshot = () => ({ regions, countries, waves, offers, bus, tools, toolAssign, blocks, bricks, done, brickExcl, obstacles, offerBUs, waveCountry, offerWave });
 
     const persist = async (d, userId) => {
         setSaveState({ status: "saving" });
@@ -407,6 +465,7 @@ export default function App() {
             await resolveByName("waves", d.waves);
             await resolveByName("offers", d.offers);
             await resolveByName("business_units", d.bus);
+            await resolveByName("tools", d.tools);
 
             const mid = (id) => idMap[id] || id;                          // remap one id
             const msc = (s) => (!s || s === "all") ? s : mid(s);          // block scope (keep "all")
@@ -421,14 +480,23 @@ export default function App() {
                 waves: d.waves.map((w) => ({ ...w, id: mid(w.id) })),
                 offers: d.offers.map((o) => ({ ...o, id: mid(o.id) })),
                 bus: d.bus.map((b) => ({ ...b, id: mid(b.id) })),
+                tools: (d.tools || []).map((t) => ({ ...t, id: mid(t.id) })),
                 blocks: d.blocks.map((b) => ({ ...b, scope: msc(b.scope) })),  // scope -> a wave/offer id
-                bricks: d.bricks,                                              // keyed by id; blockId unchanged
+                bricks: d.bricks.map((b) => ({ ...b, blockId: b.blockId ? mid(b.blockId) : null, toolId: b.toolId ? mid(b.toolId) : null })), // toolId references tools (name-resolved)
                 done: mmap(d.done),                 // country|wave|brick -> country & wave remapped
                 brickExcl: mmap(d.brickExcl),       // brick|scope        -> scope(wave/offer) remapped
                 obstacles: d.obstacles.map((o) => ({ ...o, countryId: mid(o.countryId), waveId: mid(o.waveId) })),
                 offerBUs: mmap(d.offerBUs),           // offer|bu           -> both remapped
                 waveCountry: mmap(d.waveCountry),   // wave|country       -> both remapped
                 offerWave: mmap(d.offerWave),       // offer|wave         -> both remapped
+                // tool-assignment matrix: remap each scope id; null dims stay null ("all")
+                toolAssign: (d.toolAssign || []).map((a) => ({
+                    id: a.id, toolId: mid(a.toolId),
+                    regionId: a.regionId ? mid(a.regionId) : null,
+                    countryId: a.countryId ? mid(a.countryId) : null,
+                    offerId: a.offerId ? mid(a.offerId) : null,
+                    waveId: a.waveId ? mid(a.waveId) : null,
+                })),
             };
 
             // sync(): for entity tables (merge=true) upsert then prune stale rows.
@@ -483,8 +551,11 @@ export default function App() {
             await sync("waves", D.waves.map((w, i) => ({ id: w.id, name: w.name, deadline: toISODate(w.deadline), sort_order: i })), ["id"]);
             await sync("offers", D.offers.map((o) => ({ id: o.id, name: o.name })), ["id"]);
             await sync("business_units", D.bus.map((b, i) => ({ id: b.id, name: b.name, sort_order: i })), ["id"]);
+            await sync("tools", D.tools.map((t, i) => ({ id: t.id, name: t.name, weight: Number(t.weight) || 0, sort_order: i })), ["id"]);
             await sync("blocks", D.blocks.map((b) => ({ id: b.id, name: b.name, weight: b.weight, scope_level: b.level || "wave" })), ["id"]);
-            await sync("bricks", D.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId, sort_order: i })), ["id"]);
+            // bricks may belong to a block OR a tool (exactly one parent — enforced by a
+            // DB check constraint). Send both columns; the unused one is null.
+            await sync("bricks", D.bricks.map((b, i) => ({ id: b.id, name: b.name, block_id: b.blockId || null, tool_id: b.toolId || null, sort_order: i })), ["id"]);
             // block scope: one row per scoped block. block_assignments is the only
             // target with a synthetic `id` PK and no natural unique key, so it can't
             // use on_conflict. Reconcile by block_id via the id PK: update the
@@ -533,6 +604,8 @@ export default function App() {
             const waveIds = new Set(D.waves.map((w) => w.id));
             const countryIds = new Set(D.countries.map((c) => c.id));
             const brickIds = new Set(D.bricks.map((b) => b.id));
+            const toolIds = new Set(D.tools.map((t) => t.id));
+            const regionIds = new Set(D.regions.map((r) => r.id));
             const scopeIds = new Set([...offerIds, ...waveIds]);
             await sync("offer_business_units", keysTrue(D.offerBUs).filter(([o, b]) => offerIds.has(o) && buIds.has(b)).map(([offer_id, bu_id]) => ({ offer_id, bu_id })), ["offer_id", "bu_id"], false);
             await sync("wave_countries", keysTrue(D.waveCountry).filter(([w, c]) => waveIds.has(w) && countryIds.has(c)).map(([wave_id, country_id]) => ({ wave_id, country_id })), ["wave_id", "country_id"], false);
@@ -544,6 +617,42 @@ export default function App() {
             const stamp = isUUID(userId) ? { updated_by: userId } : {};
             const bcRows = Object.entries(D.done).filter(([k]) => { const [c, w, b] = k.split("|"); return countryIds.has(c) && waveIds.has(w) && brickIds.has(b); }).map(([k, v]) => { const [country_id, wave_id, brick_id] = k.split("|"); return { country_id, wave_id, brick_id, checked: !!v, ...stamp }; });
             await sync("brick_checks", bcRows, ["country_id", "wave_id", "brick_id"], true);
+
+            // --- tool_assignments: the Tool × Region × Country × Offer × Wave matrix ----
+            // Surrogate id PK (supplied by the app, created outside the combination) plus a
+            // UNIQUE combination. Reconcile by the COMBINATION (read-diff-prune): insert the
+            // combinations that aren't in the DB yet, prune the ones no longer wanted. A null
+            // dimension means "all". Drop rows whose FK side no longer exists (cascade already
+            // cleared them). This avoids a 409 on a combination that is already present, and
+            // never stores a duplicate combination.
+            {
+                const inDim = (id, set) => id == null || set.has(id);
+                const taWant = (D.toolAssign || []).filter((a) =>
+                    toolIds.has(a.toolId)
+                    && inDim(a.regionId, regionIds) && inDim(a.countryId, countryIds)
+                    && inDim(a.offerId, offerIds) && inDim(a.waveId, waveIds));
+                const comboOf = (a) => [a.toolId, a.regionId || "", a.countryId || "", a.offerId || "", a.waveId || ""].join("|");
+                const existing = [];
+                for (let from = 0; ; from += 1000) {
+                    const { data, error } = await sb.from("tool_assignments").select("id,tool_id,region_id,country_id,offer_id,wave_id").range(from, from + 999);
+                    if (error) throw new Error(`tool_assignments (read): ${error.message}`);
+                    existing.push(...(data || []));
+                    if (!data || data.length < 1000) break;
+                }
+                const exComboOf = (r) => [r.tool_id, r.region_id || "", r.country_id || "", r.offer_id || "", r.wave_id || ""].join("|");
+                const have = new Set(existing.map(exComboOf));
+                const want = new Set(taWant.map(comboOf));
+                // collapse any duplicate combinations within the desired set before insert
+                const seen = new Set();
+                const toAdd = taWant.filter((a) => { const k = comboOf(a); if (have.has(k) || seen.has(k)) return false; seen.add(k); return true; })
+                    .map((a) => ({ id: isUUID(a.id) ? a.id : uid(), tool_id: a.toolId, region_id: a.regionId || null, country_id: a.countryId || null, offer_id: a.offerId || null, wave_id: a.waveId || null }));
+                if (toAdd.length) { const { error } = await sb.from("tool_assignments").insert(toAdd); if (error) throw new Error(`tool_assignments: ${error.message}`); }
+                for (const r of existing) {
+                    if (want.has(exComboOf(r))) continue;
+                    const { error } = await sb.from("tool_assignments").delete().eq("id", r.id);
+                    if (error) throw new Error(`tool_assignments (prune): ${error.message}`);
+                }
+            }
 
             // --- obstacles + their link tables ----------------------------------
             // Link tables carry a surrogate id (DB default) + a UNIQUE natural key.
@@ -573,10 +682,12 @@ export default function App() {
             const W = await g("waves"); if (W.length) setWaves(by(W).map((w) => ({ id: w.id, name: w.name, deadline: fromISO(w.deadline) || todayStr() })));
             const Of = await g("offers"); if (Of.length) setOffers(Of.map((o) => ({ id: o.id, name: o.name })));
             const Bu = await g("business_units"); if (Bu.length) setBUs(by(Bu).map((b) => ({ id: b.id, name: b.name })));
+            const Tl = await g("tools"); if (Tl.length) setTools(by(Tl).map((t) => ({ id: t.id, name: t.name, weight: Number(t.weight) || 0 })));
             const asg = await g("block_assignments");
             const Bl = await g("blocks");
             if (Bl.length) setBlocks(Bl.map((b) => { const a = asg.find((x) => x.block_id === b.id); return { id: b.id, name: b.name, weight: Number(b.weight) || 0, level: b.scope_level || "wave", scope: a ? (a.wave_id || a.offer_id) : "all" }; }));
-            const Bk = await g("bricks"); if (Bk.length) setBricks(by(Bk).map((b) => ({ id: b.id, name: b.name, blockId: b.block_id })));
+            const Bk = await g("bricks"); if (Bk.length) setBricks(by(Bk).map((b) => ({ id: b.id, name: b.name, blockId: b.block_id || undefined, toolId: b.tool_id || undefined })));
+            const ta = await g("tool_assignments"); setToolAssign(ta.map((r) => ({ id: r.id, toolId: r.tool_id, regionId: r.region_id, countryId: r.country_id, offerId: r.offer_id, waveId: r.wave_id })));
             const obu = await g("offer_business_units"); setOfferBUs(Object.fromEntries(obu.map((r) => [`${r.offer_id}|${r.bu_id}`, true])));
             const wc = await g("wave_countries"); setWaveCountry(Object.fromEntries(wc.map((r) => [`${r.wave_id}|${r.country_id}`, true])));
             const ow = await g("offer_waves"); setOfferWave(Object.fromEntries(ow.map((r) => [`${r.offer_id}|${r.wave_id}`, true])));
@@ -599,89 +710,165 @@ export default function App() {
     useEffect(() => { if (user && LOAD_FROM_DB) loadAll(); /* eslint-disable-next-line */ }, [user]);
 
     /* ======================= MODULE 1 — Readiness ======================= */
-    const m1Countries = countriesOfWave(m1Wave);
+    // Region filter for both views; "all" = every region.
+    const m1Regions = m1Region === "all" ? regions : regions.filter((r) => r.id === m1Region);
+    // By-wave view: countries assigned to the chosen wave, within the chosen region(s).
+    const m1Countries = countriesOfWave(m1Wave).filter((c) => m1Region === "all" || c.regionId === m1Region);
+
+    // One country card with its expandable enabler (block + tool) breakdown for a wave.
+    // A render function (not a nested component) so it never remounts on parent re-render.
+    const countryCard = (c, wid) => {
+        const v = readiness(c.id, wid), st = status(v), open = openCountry === `${c.id}|${wid}`;
+        const units = enablers(c.id, wid);
+        return (
+            <Card key={c.id} bg={C.blue}>
+                <div className="flex items-center gap-2">
+                    <button className="flex min-w-0 flex-1 items-center gap-3 rounded text-left focus:outline-none focus:ring-2" aria-expanded={open} onClick={() => setOpenCountry(open ? null : `${c.id}|${wid}`)}>
+                        {open ? <ChevronDown size={18} aria-hidden /> : <ChevronRight size={18} aria-hidden />}
+                        <span className="w-32 font-semibold" style={{ color: C.ink }}>{c.name}</span>
+                        <div className="h-3 flex-1 overflow-hidden rounded-full" style={{ background: C.white }}><div className="h-full rounded-full" style={{ width: `${v}%`, background: st.c }} /></div>
+                        <span className="w-12 text-right font-bold" style={{ color: C.ink }}>{v}%</span>
+                        <span className="w-24 text-right text-sm font-semibold" style={{ color: st.c }}>{st.t}</span>
+                    </button>
+                    <button title="Mark all milestones done" aria-label={`Mark all milestones done for ${c.name}`} onClick={() => setCountryAll(c.id, wid, true)} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.low }}><CheckCheck size={16} /></button>
+                    <button title="Clear all milestones" aria-label={`Clear all milestones for ${c.name}`} onClick={() => setCountryAll(c.id, wid, false)} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.soft }}><Eraser size={16} /></button>
+                </div>
+                {open && (
+                    <div className="mt-3 grid gap-2 border-t pt-3" style={{ borderColor: C.line }}>
+                        {units.length === 0 && <span className="text-xs" style={{ color: C.soft }}>No blocks or tools apply to this country in this wave.</span>}
+                        {units.map((u) => {
+                            const sc = unitScore(c.id, wid, u.bricks);
+                            const okey = `${c.id}|${wid}|${u.id}`, bopen = openBlock[okey];
+                            return (
+                                <div key={u.id} className="rounded-lg p-2" style={{ background: C.white }}>
+                                    <button className="flex w-full items-center gap-2 rounded text-left focus:outline-none focus:ring-2" aria-expanded={!!bopen} onClick={() => setOpenBlock({ ...openBlock, [okey]: !bopen })}>
+                                        {bopen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+                                        <span className="w-44 text-sm font-medium" style={{ color: C.ink }}>{u.name}</span>
+                                        <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: u.kind === "tool" ? C.yellow : C.green, color: C.soft }}>{u.kind}</span>
+                                        <span className="text-xs" style={{ color: C.soft }}>weight {u.weight}</span>
+                                        <div className="h-2 flex-1 overflow-hidden rounded-full" style={{ background: C.line }}><div className="h-full" style={{ width: `${sc}%`, background: status(sc).c }} /></div>
+                                        <span className="w-10 text-right text-sm font-semibold" style={{ color: C.ink }}>{sc}%</span>
+                                    </button>
+                                    {bopen && (
+                                        <div className="mt-2 grid gap-1 pl-6">
+                                            {u.bricks.length ? u.bricks.map((brick) => {
+                                                const dkey = `${c.id}|${wid}|${brick.id}`, d = !!done[dkey];
+                                                return (
+                                                    <button key={brick.id} className="flex items-center gap-2 rounded text-left text-sm focus:outline-none focus:ring-2" onClick={() => setDone({ ...done, [dkey]: !d })}>
+                                                        {d ? <CheckSquare size={16} aria-hidden style={{ color: C.low }} /> : <Square size={16} aria-hidden style={{ color: C.soft }} />}
+                                                        <span style={{ color: C.ink, textDecoration: d ? "line-through" : "none" }}>{brick.name}</span>
+                                                    </button>
+                                                );
+                                            }) : <span className="text-xs" style={{ color: C.soft }}>No milestones apply here in this wave.</span>}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </Card>
+        );
+    };
+
     const renderM1 = () => (
         <>
             <SaveBar onSave={saveAll} state={saveState} />
             <div className="mb-4 flex flex-wrap items-end gap-3">
-                <Field label="Wave">
-                    <select value={m1Wave} onChange={(e) => setM1Wave(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>
-                        {waves.map((w) => <option key={w.id} value={w.id}>{w.name} — due {w.deadline}</option>)}
+                <Field label="View">
+                    <div className="inline-flex overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }} role="group" aria-label="Readiness view">
+                        {[["wave", "By wave"], ["region", "By region"]].map(([val, lbl]) => (
+                            <button key={val} onClick={() => setM1View(val)} aria-pressed={m1View === val}
+                                className="px-3 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2"
+                                style={{ background: m1View === val ? C.mid : C.white, color: m1View === val ? C.white : C.soft }}>{lbl}</button>
+                        ))}
+                    </div>
+                </Field>
+                <Field label="Region">
+                    <select value={m1Region} onChange={(e) => setM1Region(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>
+                        <option value="all">All regions</option>
+                        {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
                 </Field>
-                <div className="ml-auto flex gap-2">
-                    <Btn kind="ghost" onClick={() => setWaveAll(m1Wave, true)}><CheckCheck size={16} /> Select all</Btn>
-                    <Btn kind="ghost" onClick={() => setWaveAll(m1Wave, false)}><Eraser size={16} /> Clear all</Btn>
-                </div>
-            </div>
-            <p className="mb-4 text-sm" style={{ color: C.soft }}>Only countries assigned to this wave (Settings → Waves → Countries) are shown. Readiness = weighted average of <b>applicable block</b> scores. A block's score = % of its <b>bricks</b> done. Blocks/bricks scoped out of this wave are excluded and weights renormalise.</p>
-
-            {m1Countries.length === 0 && (
-                <Card bg={C.yellow}><p className="text-sm" style={{ color: C.ink }}>No countries are assigned to this wave yet. Add them in <b>Settings → Mappings → Waves → Countries</b>.</p></Card>
-            )}
-
-            {regions.map((r) => {
-                const cs = m1Countries.filter((c) => c.regionId === r.id);
-                if (!cs.length) return null;
-                return (
-                    <div key={r.id} className="mb-5">
-                        <h3 className="mb-2 text-sm font-bold uppercase tracking-wide" style={{ color: C.soft }}>{r.name}</h3>
-                        <div className="grid gap-2">
-                            {cs.map((c) => {
-                                const v = readiness(c.id, m1Wave), st = status(v), open = openCountry === c.id;
-                                return (
-                                    <Card key={c.id} bg={C.blue}>
-                                        <div className="flex items-center gap-2">
-                                            <button className="flex min-w-0 flex-1 items-center gap-3 rounded text-left focus:outline-none focus:ring-2" aria-expanded={open} onClick={() => setOpenCountry(open ? null : c.id)}>
-                                                {open ? <ChevronDown size={18} aria-hidden /> : <ChevronRight size={18} aria-hidden />}
-                                                <span className="w-32 font-semibold" style={{ color: C.ink }}>{c.name}</span>
-                                                <div className="h-3 flex-1 overflow-hidden rounded-full" style={{ background: C.white }}><div className="h-full rounded-full" style={{ width: `${v}%`, background: st.c }} /></div>
-                                                <span className="w-12 text-right font-bold" style={{ color: C.ink }}>{v}%</span>
-                                                <span className="w-24 text-right text-sm font-semibold" style={{ color: st.c }}>{st.t}</span>
-                                            </button>
-                                            <button title="Mark all bricks done" aria-label={`Mark all bricks done for ${c.name}`} onClick={() => setCountryAll(c.id, m1Wave, true)} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.low }}><CheckCheck size={16} /></button>
-                                            <button title="Clear all bricks" aria-label={`Clear all bricks for ${c.name}`} onClick={() => setCountryAll(c.id, m1Wave, false)} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.soft }}><Eraser size={16} /></button>
-                                        </div>
-                                        {open && (
-                                            <div className="mt-3 grid gap-2 border-t pt-3" style={{ borderColor: C.line }}>
-                                                {blocks.filter((bl) => blockApplies(bl, c.id, m1Wave)).map((bl) => {
-                                                    const sc = blockScore(c.id, m1Wave, bl), bk = applicableBricks(bl, m1Wave);
-                                                    const okey = `${c.id}|${bl.id}`, bopen = openBlock[okey];
-                                                    return (
-                                                        <div key={bl.id} className="rounded-lg p-2" style={{ background: C.white }}>
-                                                            <button className="flex w-full items-center gap-2 rounded text-left focus:outline-none focus:ring-2" aria-expanded={!!bopen} onClick={() => setOpenBlock({ ...openBlock, [okey]: !bopen })}>
-                                                                {bopen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
-                                                                <span className="w-44 text-sm font-medium" style={{ color: C.ink }}>{bl.name}</span>
-                                                                <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: C.green, color: C.soft }}>{(bl.level || "wave") === "offer" ? "offer" : "wave"}</span>
-                                                                <span className="text-xs" style={{ color: C.soft }}>weight {bl.weight}</span>
-                                                                <div className="h-2 flex-1 overflow-hidden rounded-full" style={{ background: C.line }}><div className="h-full" style={{ width: `${sc}%`, background: status(sc).c }} /></div>
-                                                                <span className="w-10 text-right text-sm font-semibold" style={{ color: C.ink }}>{sc}%</span>
-                                                            </button>
-                                                            {bopen && (
-                                                                <div className="mt-2 grid gap-1 pl-6">
-                                                                    {bk.length ? bk.map((brick) => {
-                                                                        const dkey = `${c.id}|${m1Wave}|${brick.id}`, d = !!done[dkey];
-                                                                        return (
-                                                                            <button key={brick.id} className="flex items-center gap-2 rounded text-left text-sm focus:outline-none focus:ring-2" onClick={() => setDone({ ...done, [dkey]: !d })}>
-                                                                                {d ? <CheckSquare size={16} aria-hidden style={{ color: C.low }} /> : <Square size={16} aria-hidden style={{ color: C.soft }} />}
-                                                                                <span style={{ color: C.ink, textDecoration: d ? "line-through" : "none" }}>{brick.name}</span>
-                                                                            </button>
-                                                                        );
-                                                                    }) : <span className="text-xs" style={{ color: C.soft }}>No bricks apply to this block in this wave.</span>}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        )}
-                                    </Card>
-                                );
-                            })}
-                        </div>
+                {m1View === "wave" && (
+                    <Field label="Wave">
+                        <select value={m1Wave} onChange={(e) => setM1Wave(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>
+                            {waves.map((w) => <option key={w.id} value={w.id}>{w.name} — due {w.deadline}</option>)}
+                        </select>
+                    </Field>
+                )}
+                {m1View === "wave" && (
+                    <div className="ml-auto flex gap-2">
+                        <Btn kind="ghost" onClick={() => m1Countries.forEach((c) => setCountryAll(c.id, m1Wave, true))}><CheckCheck size={16} /> Select all</Btn>
+                        <Btn kind="ghost" onClick={() => m1Countries.forEach((c) => setCountryAll(c.id, m1Wave, false))}><Eraser size={16} /> Clear all</Btn>
                     </div>
-                );
-            })}
+                )}
+            </div>
+
+            {m1View === "wave" ? (
+                <>
+                    <p className="mb-4 text-sm" style={{ color: C.soft }}>Showing countries assigned to this wave (Settings → Mappings → Waves → Countries), grouped by region. Readiness = weighted average of <b>applicable enabler</b> scores — both <b>blocks</b> and <b>tools</b>. Each enabler's score = % of its <b>milestones (bricks)</b> done. Enablers scoped out of this wave are excluded and weights renormalise.</p>
+                    {m1Countries.length === 0 && (
+                        <Card bg={C.yellow}><p className="text-sm" style={{ color: C.ink }}>No countries are assigned to this wave{m1Region === "all" ? "" : " in this region"} yet. Add them in <b>Settings → Mappings → Waves → Countries</b>.</p></Card>
+                    )}
+                    {m1Regions.map((r) => {
+                        const cs = m1Countries.filter((c) => c.regionId === r.id);
+                        if (!cs.length) return null;
+                        return (
+                            <div key={r.id} className="mb-5">
+                                <h3 className="mb-2 text-sm font-bold uppercase tracking-wide" style={{ color: C.soft }}>{r.name}</h3>
+                                <div className="grid gap-2">
+                                    {cs.map((c) => countryCard(c, m1Wave))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </>
+            ) : (
+                <>
+                    <p className="mb-4 text-sm" style={{ color: C.soft }}>Region overview: each country's readiness across <b>every wave it is assigned to</b>. Pick a region above (or “All regions”), then switch to <b>By wave</b> to tick off milestones.</p>
+                    {m1Regions.map((r) => {
+                        const cs = countries.filter((c) => c.regionId === r.id);
+                        if (!cs.length) return null;
+                        return (
+                            <Card key={r.id} bg={C.green} style={{ marginBottom: 12 }}>
+                                <h3 className="mb-2 font-semibold" style={{ color: C.ink }}>{r.name}</h3>
+                                <div className="overflow-auto">
+                                    <table className="text-sm" style={{ color: C.ink }}>
+                                        <thead>
+                                            <tr><th className="px-2 py-1 text-left font-medium" style={{ color: C.soft }}>Country</th>
+                                                {waves.map((w) => <th key={w.id} className="px-2 py-1 text-left font-medium" style={{ color: C.soft }}>{w.name}</th>)}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {cs.map((c) => (
+                                                <tr key={c.id}>
+                                                    <td className="py-1 pr-3 font-medium">{c.name}</td>
+                                                    {waves.map((w) => {
+                                                        const inWave = !!waveCountry[`${w.id}|${c.id}`];
+                                                        if (!inWave) return <td key={w.id} className="px-2 py-1 text-center" style={{ color: C.line }}>—</td>;
+                                                        const v = readiness(c.id, w.id), st = status(v);
+                                                        return (
+                                                            <td key={w.id} className="px-1 py-1">
+                                                                <button onClick={() => { setM1View("wave"); setM1Wave(w.id); setOpenCountry(`${c.id}|${w.id}`); }} title={`${c.name} — ${w.name}: ${st.t}`}
+                                                                    className="flex w-24 items-center gap-2 rounded-lg px-2 py-1 focus:outline-none focus:ring-2" style={{ background: C.white, border: `1px solid ${C.line}` }}>
+                                                                    <span className="inline-block h-2 w-2 rounded-full" style={{ background: st.c }} aria-hidden />
+                                                                    <span className="font-semibold" style={{ color: C.ink }}>{v}%</span>
+                                                                </button>
+                                                            </td>
+                                                        );
+                                                    })}
+                                                </tr>
+                                            ))}
+                                            {!cs.length && <tr><td className="py-1 text-sm" style={{ color: C.soft }}>No countries in this region.</td></tr>}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </Card>
+                        );
+                    })}
+                </>
+            )}
         </>
     );
 
@@ -780,12 +967,12 @@ export default function App() {
     );
 
     /* ======================= MODULE 3 — Blocks & Bricks ======================= */
-    const totW = blocks.reduce((a, b) => a + b.weight, 0);
+    const totW = blocks.reduce((a, b) => a + b.weight, 0) + tools.reduce((a, t) => a + (Number(t.weight) || 0), 0);
     const renderM3 = () => (
         <>
             <SaveBar onSave={saveAll} state={saveState} />
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm" style={{ color: C.soft }}>Blocks carry the <b>weight</b> and a <b>level</b> (wave or offer). Bricks are the <b>tasks</b> inside each block. Use <b>Applies&nbsp;to</b> on a brick to drop it from one wave/offer without touching the others. Total weight: <b style={{ color: totW === 100 ? C.low : C.med }}>{totW}</b>{totW !== 100 ? " (aim for 100)" : ""}.</p>
+                <p className="text-sm" style={{ color: C.soft }}>Blocks carry the <b>weight</b> and a <b>level</b> (wave or offer). Bricks are the <b>tasks</b> inside each block. Use <b>Applies&nbsp;to</b> on a brick to drop it from one wave/offer without touching the others. <b>Tools</b> (below) are weighted enablers with their own milestones, scoped via the matrix in Settings. Total enabler weight (blocks + tools): <b style={{ color: totW === 100 ? C.low : C.med }}>{totW}</b>{totW !== 100 ? " (aim for 100)" : ""}.</p>
                 <Btn onClick={() => setBlocks([...blocks, { id: gid(), name: "New block", weight: 0, level: "wave", scope: "all" }])}><Plus size={16} /> Add block</Btn>
             </div>
             <div className="grid gap-2">
@@ -847,6 +1034,37 @@ export default function App() {
                         </Card>
                     );
                 })}
+            </div>
+
+            <h3 className="mb-2 mt-6 text-sm font-bold uppercase tracking-wide" style={{ color: C.soft }}>Tools (setup readiness)</h3>
+            <p className="mb-3 text-sm" style={{ color: C.soft }}>A <b>tool</b> is a weighted enabler with its own setup-readiness <b>milestones</b>. Create and weight tools — and assign them to regions / countries / offers / waves — in <b>Settings → Tools</b>. Define each tool's milestones here. Tools can vary by region or wave through the assignment matrix.</p>
+            <div className="grid gap-2">
+                {tools.map((tl) => {
+                    const tbk = bricks.filter((b) => b.toolId === tl.id), open = openB3[tl.id];
+                    return (
+                        <Card key={tl.id} bg={C.yellow}>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button aria-label="Toggle milestones" onClick={() => setOpenB3({ ...openB3, [tl.id]: !open })} className="rounded p-1 focus:outline-none focus:ring-2">{open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</button>
+                                <span className="min-w-0 flex-1 font-medium" style={{ color: C.ink }}>{tl.name}</span>
+                                <span className="text-xs" style={{ color: C.soft }}>weight {Number(tl.weight) || 0}</span>
+                                <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: C.white, color: C.soft }}>{tbk.length} milestone{tbk.length !== 1 ? "s" : ""}</span>
+                            </div>
+                            {open && (
+                                <div className="mt-2 grid gap-2 pl-9">
+                                    {tbk.map((b) => (
+                                        <div key={b.id} className="flex items-center gap-2 rounded-lg p-2" style={{ background: C.white }}>
+                                            <span style={{ color: C.soft }}>•</span>
+                                            <input value={b.name} aria-label="Milestone name" onChange={(e) => setBricks(bricks.map((x) => x.id === b.id ? { ...x, name: e.target.value } : x))} className="min-w-0 flex-1 rounded-lg px-2 py-1 text-sm" style={inputStyle} />
+                                            <button aria-label={`Delete milestone ${b.name}`} onClick={() => setBricks(bricks.filter((x) => x.id !== b.id))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={14} /></button>
+                                        </div>
+                                    ))}
+                                    <div><Btn kind="ghost" onClick={() => setBricks([...bricks, { id: gid(), name: "New milestone", toolId: tl.id }])}><Plus size={14} /> Add milestone</Btn></div>
+                                </div>
+                            )}
+                        </Card>
+                    );
+                })}
+                {!tools.length && <Card bg={C.yellow}><p className="text-sm" style={{ color: C.ink }}>No tools yet. Add tools in <b>Settings → Tools</b>, then define their milestones here.</p></Card>}
             </div>
         </>
     );
@@ -939,12 +1157,18 @@ export default function App() {
         add("Waves", [{ name: "Wave 1", deadline: "30/09/2026" }]); add("Offers", [{ name: "Core Platform" }]);
         add("BusinessUnits", [{ name: "Retail" }]); add("Blocks", [{ name: "Data migration", weight: 30, level: "wave", scope: "all" }]);
         add("Bricks", [{ name: "Extract legacy data", block: "Data migration" }]);
+        // Tools = weighted enablers with their own setup milestones (ToolBricks).
+        add("Tools", [{ name: "CRM platform", weight: 0 }]);
+        add("ToolBricks", [{ tool: "CRM platform", name: "Provision licences" }]);
         add("Obstacles", [{ title: "Example risk", owner: "Owner name", severity: "High", country: "France", wave: "Wave 1", resolution: "Mitigation action" }]);
         // checkbox-importable sheets:
         add("WaveCountries", [{ wave: "Wave 1", country: "France", selected: "yes" }]);
         add("OfferBUs", [{ offer: "Core Platform", bu: "Retail", selected: "yes" }]);
         add("OfferWaves", [{ offer: "Core Platform", wave: "Wave 1", selected: "yes" }]);
         add("BrickChecks", [{ country: "France", wave: "Wave 1", brick: "Extract legacy data", checked: "yes" }]);
+        // Tool assignment matrix: leave a cell BLANK to mean "all". The
+        // (tool,region,country,offer,wave) combination must be unique.
+        add("ToolAssignments", [{ tool: "CRM platform", region: "EMEA", country: "", offer: "", wave: "Wave 1" }]);
         XLSX.writeFile(wb, "transformation_import_template.xlsx");
     };
     const onImport = (e) => {
@@ -965,6 +1189,8 @@ export default function App() {
                 const ofBy = {}; Of.forEach((o) => ofBy[o.name.toLowerCase()] = o.id);
                 const Bu = sh("BusinessUnits").map((r) => ({ id: str(r.id) || gid(), name: str(r.name) })).filter((b) => b.name);
                 const buBy = {}; Bu.forEach((b) => buBy[b.name.toLowerCase()] = b.id);
+                const Tl = sh("Tools").map((r) => ({ id: str(r.id) || gid(), name: str(r.name), weight: Number(r.weight) || 0 })).filter((t) => t.name);
+                const tlBy = {}; Tl.forEach((t) => tlBy[t.name.toLowerCase()] = t.id);
                 const Bl = sh("Blocks").map((r) => {
                     const lvl = ["wave", "offer"].includes(str(r.level).toLowerCase()) ? str(r.level).toLowerCase() : "wave";
                     const scRaw = str(r.scope).toLowerCase();
@@ -973,7 +1199,10 @@ export default function App() {
                 }).filter((b) => b.name);
                 const blBy = {}; Bl.forEach((b) => blBy[b.name.toLowerCase()] = b.id);
                 const Bk = sh("Bricks").map((r) => ({ id: str(r.id) || gid(), name: str(r.name), blockId: blBy[str(r.block).toLowerCase()] || Bl[0]?.id })).filter((b) => b.name && b.blockId);
-                const bkBy = {}; Bk.forEach((b) => bkBy[b.name.toLowerCase()] = b.id);
+                // tool milestones: bricks attached to a tool (no block)
+                const TBk = sh("ToolBricks").map((r) => ({ id: str(r.id) || gid(), name: str(r.name), toolId: tlBy[str(r.tool).toLowerCase()] })).filter((b) => b.name && b.toolId);
+                const allBricks = [...Bk, ...TBk];
+                const bkBy = {}; allBricks.forEach((b) => bkBy[b.name.toLowerCase()] = b.id);
                 const cBy = {}; Cn.forEach((c) => cBy[c.name.toLowerCase()] = c.id);
                 const Ob = sh("Obstacles").map((r) => ({ id: str(r.id) || gid(), title: str(r.title), owner: str(r.owner), severity: ["High", "Medium", "Low"].includes(str(r.severity)) ? str(r.severity) : "Medium", countryId: cBy[str(r.country).toLowerCase()] || Cn[0]?.id, waveId: wBy[str(r.wave).toLowerCase()] || W[0]?.id, resolution: str(r.resolution), blocks: [], blockIds: [] })).filter((o) => o.title);
                 // checkbox sheets
@@ -981,6 +1210,19 @@ export default function App() {
                 const obuMap = {}; sh("OfferBUs").forEach((r) => { const o = ofBy[str(r.offer).toLowerCase()], b = buBy[str(r.bu).toLowerCase()]; if (o && b && yes(r.selected)) obuMap[`${o}|${b}`] = true; });
                 const owMap = {}; sh("OfferWaves").forEach((r) => { const o = ofBy[str(r.offer).toLowerCase()], w = wBy[str(r.wave).toLowerCase()]; if (o && w && yes(r.selected)) owMap[`${o}|${w}`] = true; });
                 const doneMap = {}; sh("BrickChecks").forEach((r) => { const c = cBy[str(r.country).toLowerCase()], w = wBy[str(r.wave).toLowerCase()], b = bkBy[str(r.brick).toLowerCase()]; if (c && w && b) doneMap[`${c}|${w}|${b}`] = yes(r.checked); });
+                // Tool assignment matrix. A blank dimension means "all" (null). The
+                // (tool,region,country,offer,wave) combination is de-duplicated.
+                const taSeen = new Set();
+                const TA = sh("ToolAssignments").map((r) => {
+                    const toolId = tlBy[str(r.tool).toLowerCase()]; if (!toolId) return null;
+                    const regionId = str(r.region) ? (rBy[str(r.region).toLowerCase()] || null) : null;
+                    const countryId = str(r.country) ? (cBy[str(r.country).toLowerCase()] || null) : null;
+                    const offerId = str(r.offer) ? (ofBy[str(r.offer).toLowerCase()] || null) : null;
+                    const waveId = str(r.wave) ? (wBy[str(r.wave).toLowerCase()] || null) : null;
+                    const key = [toolId, regionId || "", countryId || "", offerId || "", waveId || ""].join("|");
+                    if (taSeen.has(key)) return null; taSeen.add(key);
+                    return { id: str(r.id) || gid(), toolId, regionId, countryId, offerId, waveId };
+                }).filter(Boolean);
                 // Meta: user id used to attribute the imported brick checks. A valid UUID
                 // from the sheet wins; otherwise we fall back to the signed-in user's id.
                 const meta = sh("Meta")[0] || {};
@@ -992,9 +1234,11 @@ export default function App() {
                 if (W.length) { setWaves(W); parts.push(`${W.length} waves`); }
                 if (Of.length) { setOffers(Of); parts.push(`${Of.length} offers`); }
                 if (Bu.length) { setBUs(Bu); parts.push(`${Bu.length} business units`); }
+                if (Tl.length) { setTools(Tl); parts.push(`${Tl.length} tools`); }
                 if (Bl.length) { setBlocks(Bl); parts.push(`${Bl.length} blocks`); }
-                if (Bk.length) { setBricks(Bk); parts.push(`${Bk.length} bricks`); }
+                if (allBricks.length) { setBricks(allBricks); parts.push(`${allBricks.length} bricks/milestones`); }
                 if (Ob.length) { setObstacles(Ob); parts.push(`${Ob.length} obstacles`); }
+                if (TA.length) { setToolAssign(TA); parts.push(`${TA.length} tool assignments`); }
                 if (Object.keys(wcMap).length) { setWaveCountry(wcMap); parts.push(`${Object.keys(wcMap).length} wave→country`); }
                 if (Object.keys(obuMap).length) { setOfferBUs(obuMap); parts.push(`${Object.keys(obuMap).length} offer→BU`); }
                 if (Object.keys(owMap).length) { setOfferWave(owMap); parts.push(`${Object.keys(owMap).length} offer→wave`); }
@@ -1012,13 +1256,15 @@ export default function App() {
                     offers: Of.length ? Of : offers,
                     bus: Bu.length ? Bu : bus,
                     blocks: Bl.length ? Bl : blocks,
-                    bricks: Bk.length ? Bk : bricks,
-                    done: Object.keys(doneMap).length ? doneMap : (Bk.length ? {} : done),
+                    tools: Tl.length ? Tl : tools,
+                    bricks: allBricks.length ? allBricks : bricks,
+                    done: Object.keys(doneMap).length ? doneMap : (allBricks.length ? {} : done),
                     brickExcl,
                     obstacles: Ob.length ? Ob : obstacles,
                     offerBUs: Object.keys(obuMap).length ? obuMap : offerBUs,
                     waveCountry: Object.keys(wcMap).length ? wcMap : waveCountry,
                     offerWave: Object.keys(owMap).length ? owMap : offerWave,
+                    toolAssign: TA.length ? TA : toolAssign,
                 };
                 const sb = await getSupabase();
                 if (sb) {
@@ -1065,6 +1311,87 @@ export default function App() {
                 onAdd={() => setOffers([...offers, { id: gid(), name: "New offer" }])} onChange={(id, p) => setOffers(offers.map((x) => x.id === id ? { ...x, ...p } : x))} onDel={(id) => setOffers(offers.filter((x) => x.id !== id))} />
             <SettingsSection title="Business Units" items={bus} bg={C.green}
                 onAdd={() => setBUs([...bus, { id: gid(), name: "New unit" }])} onChange={(id, p) => setBUs(bus.map((x) => x.id === id ? { ...x, ...p } : x))} onDel={(id) => setBUs(bus.filter((x) => x.id !== id))} />
+
+            <SettingsSection title="Tools (enablers)" items={tools} bg={C.blue}
+                onAdd={() => setTools([...tools, { id: gid(), name: "New tool", weight: 0 }])} onChange={(id, p) => setTools(tools.map((x) => x.id === id ? { ...x, ...p } : x))} onDel={(id) => { setTools(tools.filter((x) => x.id !== id)); setBricks(bricks.filter((b) => b.toolId !== id)); setToolAssign(toolAssign.filter((a) => a.toolId !== id)); }}
+                extra={(it) => <span className="flex items-center gap-1"><span className="text-xs" style={{ color: C.soft }}>weight</span><input type="number" min={0} step={1} value={it.weight ?? 0} aria-label="Tool weight" onChange={(e) => setTools(tools.map((x) => x.id === it.id ? { ...x, weight: Number(e.target.value) || 0 } : x))} className="w-20 rounded-lg px-2 py-1.5 text-sm" style={inputStyle} /></span>} />
+
+            <Card bg={C.blue} style={{ marginBottom: 16 }}>
+                <h3 className="mb-1 font-semibold" style={{ color: C.ink }}>Tool assignments · Tool × Region × Country × Offer × Wave</h3>
+                <p className="mb-3 text-sm" style={{ color: C.soft }}>Each row says where a tool's setup applies. Leave a dimension as <b>All</b> to apply it across that whole dimension (e.g. a region-wide setup leaves Country, Offer and Wave as All). A new row is rejected only if the exact same combination already exists — the same tool, country, offer or wave may otherwise repeat across rows.</p>
+                <div className="flex flex-wrap items-end gap-2">
+                    <label className="flex flex-col gap-1 text-xs" style={{ color: C.soft }}>Tool
+                        <select value={taDraft.toolId} aria-label="Tool" onChange={(e) => setTaDraft({ ...taDraft, toolId: e.target.value })} className="rounded-lg px-2 py-1.5 text-sm" style={inputStyle}>
+                            <option value="">Choose…</option>
+                            {tools.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs" style={{ color: C.soft }}>Region
+                        <select value={taDraft.regionId} aria-label="Region" onChange={(e) => setTaDraft({ ...taDraft, regionId: e.target.value, countryId: "all" })} className="rounded-lg px-2 py-1.5 text-sm" style={inputStyle}>
+                            <option value="all">All</option>
+                            {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs" style={{ color: C.soft }}>Country
+                        <select value={taDraft.countryId} aria-label="Country" onChange={(e) => setTaDraft({ ...taDraft, countryId: e.target.value })} className="rounded-lg px-2 py-1.5 text-sm" style={inputStyle}>
+                            <option value="all">All</option>
+                            {countries.filter((c) => taDraft.regionId === "all" || c.regionId === taDraft.regionId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs" style={{ color: C.soft }}>Offer
+                        <select value={taDraft.offerId} aria-label="Offer" onChange={(e) => setTaDraft({ ...taDraft, offerId: e.target.value })} className="rounded-lg px-2 py-1.5 text-sm" style={inputStyle}>
+                            <option value="all">All</option>
+                            {offers.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                        </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs" style={{ color: C.soft }}>Wave
+                        <select value={taDraft.waveId} aria-label="Wave" onChange={(e) => setTaDraft({ ...taDraft, waveId: e.target.value })} className="rounded-lg px-2 py-1.5 text-sm" style={inputStyle}>
+                            <option value="all">All</option>
+                            {waves.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                        </select>
+                    </label>
+                    <Btn onClick={() => {
+                        if (!taDraft.toolId) { setTaMsg("Choose a tool first."); return; }
+                        const norm = (v) => (v === "all" ? null : v);
+                        const row = { toolId: taDraft.toolId, regionId: norm(taDraft.regionId), countryId: norm(taDraft.countryId), offerId: norm(taDraft.offerId), waveId: norm(taDraft.waveId) };
+                        const dup = toolAssign.some((a) => a.toolId === row.toolId && (a.regionId ?? null) === row.regionId && (a.countryId ?? null) === row.countryId && (a.offerId ?? null) === row.offerId && (a.waveId ?? null) === row.waveId);
+                        if (dup) { setTaMsg("That exact combination already exists."); return; }
+                        setToolAssign([...toolAssign, { id: uid(), ...row }]);
+                        setTaMsg("");
+                    }}><Plus size={16} /> Add</Btn>
+                    {taMsg && <span className="text-sm" style={{ color: C.high }}>{taMsg}</span>}
+                </div>
+
+                {toolAssign.length > 0 && (
+                    <div className="mt-3 overflow-x-auto">
+                        <table className="w-full text-sm" style={{ color: C.ink }}>
+                            <thead><tr style={{ color: C.soft }}>
+                                <th className="px-2 py-1 text-left font-semibold">Tool</th>
+                                <th className="px-2 py-1 text-left font-semibold">Region</th>
+                                <th className="px-2 py-1 text-left font-semibold">Country</th>
+                                <th className="px-2 py-1 text-left font-semibold">Offer</th>
+                                <th className="px-2 py-1 text-left font-semibold">Wave</th>
+                                <th className="px-2 py-1"></th>
+                            </tr></thead>
+                            <tbody>
+                                {toolAssign.map((a) => {
+                                    const lbl = (arr, id) => id ? (arr.find((x) => x.id === id)?.name ?? "?") : "All";
+                                    return (
+                                        <tr key={a.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                                            <td className="px-2 py-1">{lbl(tools, a.toolId)}</td>
+                                            <td className="px-2 py-1">{lbl(regions, a.regionId)}</td>
+                                            <td className="px-2 py-1">{lbl(countries, a.countryId)}</td>
+                                            <td className="px-2 py-1">{lbl(offers, a.offerId)}</td>
+                                            <td className="px-2 py-1">{lbl(waves, a.waveId)}</td>
+                                            <td className="px-2 py-1 text-right"><button aria-label="Delete assignment" onClick={() => setToolAssign(toolAssign.filter((x) => x.id !== a.id))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={14} /></button></td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </Card>
 
             <h3 className="mb-2 mt-4 text-sm font-bold uppercase tracking-wide" style={{ color: C.soft }}>Mappings</h3>
             <Matrix title="Offers → Business Units" rows={offers} cols={bus} map={offerBUs} setMap={setOfferBUs} bg={C.blue} />
