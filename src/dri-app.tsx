@@ -172,7 +172,8 @@ const seedAdoptionScopes = [
 ];
 // Checks keyed "countryId|toolId|taskId" -> { value, owner, measuredAt }. One tool = one branch;
 // a country with a single tool simply has one toolId segment in play — no schema change needed.
-const seedAdoptionChecks = {
+type AdoptionCheck = { value?: number | string; owner?: string; measuredAt?: string };
+const seedAdoptionChecks: Record<string, AdoptionCheck> = {
     [`${ID.cFR}|${ID.t1}|reversionRate`]: { value: 22, owner: "france.ops.lead", measuredAt: "21/07/2026" },
     [`${ID.cFR}|${ID.t1}|loginRate14d`]: { value: 78, owner: "france.ops.lead", measuredAt: "21/07/2026" },
     [`${ID.cFR}|${ID.t2}|trainCompletion`]: { value: 95, owner: "france.hr.lead", measuredAt: "15/07/2026" },
@@ -598,9 +599,9 @@ export default function App() {
                     scopeLevel: s.scopeLevel || "Country", buId: s.buId ? mid(s.buId) : null,
                     rolloutStatus: s.rolloutStatus || "planned", effectiveDate: s.effectiveDate,
                 })),
-                adoptionChecks: Object.fromEntries(Object.entries(d.adoptionChecks || {}).map(([k, v]) => {
+                adoptionChecks: Object.fromEntries(Object.entries(d.adoptionChecks || {}).map(([k, v]: [string, AdoptionCheck]) => {
                     const [cid, tid, taskId] = k.split("|"); return [`${mid(cid)}|${mid(tid)}|${taskId}`, v];
-                })),
+                })) as Record<string, AdoptionCheck>,
             };
 
             // sync(): for entity tables (merge=true) upsert then prune stale rows.
@@ -781,7 +782,14 @@ export default function App() {
             })), ["id"]);
             await sync("adoption_checks", Object.entries(D.adoptionChecks).filter(([k]) => { const [cid, tid] = k.split("|"); return countryIds.has(cid) && toolIds.has(tid); }).map(([k, v]) => {
                 const [country_id, tool_id, task_id] = k.split("|");
-                return { country_id, tool_id, task_id, value: v.value === "" || v.value == null ? null : Number(v.value), owner: v.owner || null, measured_at: v.measuredAt ? toISODate(v.measuredAt) : null };
+                return {
+                    country_id,
+                    tool_id,
+                    task_id,
+                    value: v.value === "" || v.value == null ? null : Number(v.value),
+                    owner: v.owner || null,
+                    measured_at: v.measuredAt ? toISODate(v.measuredAt) : null,
+                };
             }), ["country_id", "tool_id", "task_id"]);
 
             setSaveState({ status: "saved", at: `${todayStr()} ${new Date().toLocaleTimeString()}` });
