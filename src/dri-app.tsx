@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Gauge, AlertTriangle, Layers, FileBarChart, Settings as Cog, ChevronDown, ChevronRight, Plus, Trash2, Download, Calendar, Upload, FileDown, CheckSquare, Square, Save, LogOut, Lock, Pencil, CheckCheck, Eraser } from "lucide-react";
+import { Gauge, AlertTriangle, Layers, FileBarChart, Settings as Cog, ChevronDown, ChevronRight, Plus, Trash2, Download, Calendar, GitBranch, List, Upload, FileDown, CheckSquare, Square, Save, LogOut, Lock, Pencil, CheckCheck, Eraser } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import * as XLSX from "xlsx";
 // STATIC import: Vite compiles the client into the main chunk, so there is no
@@ -114,11 +114,11 @@ seedCountries.forEach((c, ci) => seedWaves.forEach((w, wi) => seedBricks.forEach
 const seedBrickExclusions = {};
 
 const seedObstacles = [
-    { id: ID.ob1, title: "GDPR data residency unresolved", owner: "L. Martin", severity: "High", countryIds: [ID.cFR], waveIds: [ID.w1], resolution: "Legal review + regional data-centre decision", blocks: [ID.ob3, ID.ob2], blockIds: [ID.bl3] },
-    { id: ID.ob2, title: "Trainer availability shortfall", owner: "S. Klein", severity: "Medium", countryIds: [ID.cDE], waveIds: [ID.w1], resolution: "Hire 2 contract trainers by Q3", blocks: [], blockIds: [ID.bl2] },
-    { id: ID.ob3, title: "Migration tooling not localised", owner: "A. Tan", severity: "High", countryIds: [ID.cJP], waveIds: [ID.w1], resolution: "Vendor patch + UAT", blocks: [], blockIds: [ID.bl1, ID.bl4] },
-    { id: ID.ob4, title: "Sponsor turnover", owner: "R. Okafor", severity: "Low", countryIds: [ID.cAU], waveIds: [ID.w2], resolution: "Re-confirm exec sponsor", blocks: [], blockIds: [ID.bl5] },
-    { id: ID.ob5, title: "Procurement delay on infra", owner: "M. Haddad", severity: "Medium", countryIds: [ID.cAE], waveIds: [ID.w1], resolution: "Escalate to SteerCo", blocks: [ID.ob3], blockIds: [ID.bl4] },
+    { id: ID.ob1, title: "GDPR data residency unresolved", owner: "L. Martin", severity: "High", countryId: ID.cFR, waveId: ID.w1, resolution: "Legal review + regional data-centre decision", blocks: [ID.ob3, ID.ob2], blockIds: [ID.bl3] },
+    { id: ID.ob2, title: "Trainer availability shortfall", owner: "S. Klein", severity: "Medium", countryId: ID.cDE, waveId: ID.w1, resolution: "Hire 2 contract trainers by Q3", blocks: [], blockIds: [ID.bl2] },
+    { id: ID.ob3, title: "Migration tooling not localised", owner: "A. Tan", severity: "High", countryId: ID.cJP, waveId: ID.w1, resolution: "Vendor patch + UAT", blocks: [], blockIds: [ID.bl1, ID.bl4] },
+    { id: ID.ob4, title: "Sponsor turnover", owner: "R. Okafor", severity: "Low", countryId: ID.cAU, waveId: ID.w2, resolution: "Re-confirm exec sponsor", blocks: [], blockIds: [ID.bl5] },
+    { id: ID.ob5, title: "Procurement delay on infra", owner: "M. Haddad", severity: "Medium", countryId: ID.cAE, waveId: ID.w1, resolution: "Escalate to SteerCo", blocks: [ID.ob3], blockIds: [ID.bl4] },
 ];
 
 const seedOfferBUs = { [`${ID.o1}|${ID.u1}`]: true, [`${ID.o1}|${ID.u2}`]: true, [`${ID.o2}|${ID.u1}`]: true };
@@ -135,10 +135,53 @@ const seedToolAssign = [
     { id: ID.ta3, toolId: ID.t2, regionId: null, countryId: ID.cFR, offerId: ID.o1, waveId: null },    // Payments: France, Core Platform, any wave
 ];
 
-const SEV = { Critical: "#0284c7", High: C.high, Medium: C.med, Low: C.low };
-const sevRank = { Critical: 3.5, High: 3, Medium: 2, Low: 1 };
-const sevToDb = (s) => ({ Critical: "critical", High: "high", Medium: "medium", Low: "low" }[s] || "medium");
-const sevFromDb = (s) => ({ critical: "Critical", high: "High", attention_needed: "Critical", medium: "Medium", low: "Low" }[s] || "Medium");
+/* ---------- Adoption layer (additive; sits next to Blocks/Bricks + Tool setup) ----------
+   Global registry: one set of enablers/groups/tasks, shared by every tool.
+   Per country+tool: a rollout SCOPE (where it applies) and CHECKS (measured task values).
+   Task score: graded -> % of target reached (direction-aware); binary -> 100 or 0.
+   Status:  green >= 85 | amber 60-84 | red < 60. */
+const seedAdoptionEnablers = [
+    {
+        id: "ADP", name: "Adoption", weight: 1, groups: [
+            {
+                id: "ADP-TRN", name: "Training", tasks: [
+                    { id: "trainCompletion", name: "Training completion", scoringType: "graded", target: 90, direction: "higherIsBetter" },
+                    { id: "quizPass", name: "Quiz pass rate", scoringType: "graded", target: 80, direction: "higherIsBetter" },
+                ]
+            },
+            {
+                id: "ADP-USG", name: "Usage", tasks: [
+                    { id: "loginRate14d", name: "Login rate (14d)", scoringType: "graded", target: 85, direction: "higherIsBetter", measurementWindow: "day14" },
+                    { id: "taskCompletion", name: "Task completion (30d)", scoringType: "graded", target: 75, direction: "higherIsBetter", measurementWindow: "day30" },
+                    { id: "reversionRate", name: "Reversion rate (30d)", scoringType: "graded", target: 10, direction: "lowerIsBetter", measurementWindow: "day30" },
+                ]
+            },
+            {
+                id: "ADP-RFC", name: "Reinforcement", tasks: [
+                    { id: "managerSignoffStopped", name: "Manager sign-off stopped", scoringType: "binary" },
+                    { id: "championAssigned", name: "Champion assigned", scoringType: "binary" },
+                ]
+            },
+        ]
+    },
+];
+// Rollout scope: which tool runs where (a country, or one business unit within it).
+const seedAdoptionScopes = [
+    { id: uid(), toolId: ID.t1, countryId: ID.cFR, scopeLevel: "BusinessUnit", buId: ID.u1, rolloutStatus: "active", effectiveDate: "01/06/2026" },
+    { id: uid(), toolId: ID.t2, countryId: ID.cFR, scopeLevel: "BusinessUnit", buId: ID.u2, rolloutStatus: "active", effectiveDate: "01/07/2026" },
+];
+// Checks keyed "countryId|toolId|taskId" -> { value, owner, measuredAt }. One tool = one branch;
+// a country with a single tool simply has one toolId segment in play — no schema change needed.
+const seedAdoptionChecks = {
+    [`${ID.cFR}|${ID.t1}|reversionRate`]: { value: 22, owner: "france.ops.lead", measuredAt: "21/07/2026" },
+    [`${ID.cFR}|${ID.t1}|loginRate14d`]: { value: 78, owner: "france.ops.lead", measuredAt: "21/07/2026" },
+    [`${ID.cFR}|${ID.t2}|trainCompletion`]: { value: 95, owner: "france.hr.lead", measuredAt: "15/07/2026" },
+};
+
+const SEV = { High: C.high, Medium: C.med, Low: C.low };
+const sevRank = { High: 3, Medium: 2, Low: 1 };
+const sevToDb = (s) => ({ High: "high", Medium: "medium", Low: "low" }[s] || "medium");
+const sevFromDb = (s) => ({ high: "High", critical: "High", medium: "Medium", low: "Low" }[s] || "Medium");
 const MODULES = [
     { id: "m1", name: "Readiness Score", Icon: Gauge },
     { id: "m2", name: "Obstacles & Risks", Icon: AlertTriangle },
@@ -247,24 +290,12 @@ const ObstacleForm = ({ value, onChange, onSave, onCancel, countries, waves, blo
             <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Title"><input value={value.title} onChange={(e) => set({ title: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle} /></Field>
                 <Field label="Owner"><input value={value.owner} onChange={(e) => set({ owner: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle} /></Field>
-                <Field label="Severity"><select value={value.severity} onChange={(e) => set({ severity: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle}>{["High", "Critical", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
+                <Field label="Severity"><select value={value.severity} onChange={(e) => set({ severity: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle}>{["High", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
+                <Field label="Country"><select value={value.countryId} onChange={(e) => set({ countryId: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle}>{countries.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
+                <Field label="Wave"><select value={value.waveId} onChange={(e) => set({ waveId: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle}>{waves.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
                 <Field label="Resolution path"><input value={value.resolution} onChange={(e) => set({ resolution: e.target.value })} className="w-full rounded-lg px-3 py-1.5" style={inputStyle} /></Field>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <div>
-                    <span className="mb-1 block text-sm font-medium" style={{ color: C.ink }}>Countries</span>
-                    <div className="flex flex-wrap gap-1">
-                        {countries.map((c) => <Chip key={c.id} on={(value.countryIds || []).includes(c.id)} onClick={() => toggle("countryIds", c.id)}>{c.name}</Chip>)}
-                        {!countries.length && <span className="text-xs" style={{ color: C.soft }}>No countries defined.</span>}
-                    </div>
-                </div>
-                <div>
-                    <span className="mb-1 block text-sm font-medium" style={{ color: C.ink }}>Waves</span>
-                    <div className="flex flex-wrap gap-1">
-                        {waves.map((w) => <Chip key={w.id} on={(value.waveIds || []).includes(w.id)} onClick={() => toggle("waveIds", w.id)}>{w.name}</Chip>)}
-                        {!waves.length && <span className="text-xs" style={{ color: C.soft }}>No waves defined.</span>}
-                    </div>
-                </div>
                 <div>
                     <span className="mb-1 block text-sm font-medium" style={{ color: C.ink }}>Affects blocks</span>
                     <div className="flex flex-wrap gap-1">
@@ -334,6 +365,9 @@ export default function App() {
     const [bus, setBUs] = useState(seedBUs);
     const [tools, setTools] = useState(seedTools);
     const [toolAssign, setToolAssign] = useState(seedToolAssign);
+    const [adoptionEnablers, setAdoptionEnablers] = useState(seedAdoptionEnablers);
+    const [adoptionScopes, setAdoptionScopes] = useState(seedAdoptionScopes);
+    const [adoptionChecks, setAdoptionChecks] = useState(seedAdoptionChecks);
     const [blocks, setBlocks] = useState(seedBlocks);
     const [bricks, setBricks] = useState(seedBricks);
     const [done, setDone] = useState(seedDone);
@@ -351,6 +385,7 @@ export default function App() {
     const [fSev, setFSev] = useState("All");
     const [fCountry, setFCountry] = useState("All");
     const [fWave, setFWave] = useState("All");
+    const [view, setView] = useState("list");
     const [obDraft, setObDraft] = useState(null);
     const [openB3, setOpenB3] = useState({});
     const [openBrickScope, setOpenBrickScope] = useState({});
@@ -358,10 +393,17 @@ export default function App() {
     const [m4Wave, setM4Wave] = useState(seedWaves[0]?.id);
     // Module 1 view controls: region filter + "by wave" / "by region" view mode.
     const [m1Region, setM1Region] = useState("all");
-    const [m1View, setM1View] = useState("region"); // "region" = overview grid; "wave" = detailed per-wave
+    const [m1View, setM1View] = useState("wave"); // "wave" = detailed per-wave; "region" = country×wave grid
     // Settings: draft for adding a tool-assignment matrix row.
     const [taDraft, setTaDraft] = useState({ toolId: "", regionId: "all", countryId: "all", offerId: "all", waveId: "all" });
     const [taMsg, setTaMsg] = useState("");
+    // Adoption layer: draft for adding a rollout scope, and open/close state for the
+    // registry editor (Module 3) and per-country adoption panel (Module 1).
+    const [asDraft, setAsDraft] = useState({ toolId: "", countryId: "", scopeLevel: "Country", buId: "", rolloutStatus: "planned", effectiveDate: todayStr() });
+    const [asMsg, setAsMsg] = useState("");
+    const [openAdoptEnabler, setOpenAdoptEnabler] = useState({});
+    const [openAdoptCountry, setOpenAdoptCountry] = useState({});
+    const [openAdoptTool, setOpenAdoptTool] = useState({});
     const chartRef = useRef(null);
     const [importMsg, setImportMsg] = useState("");
 
@@ -410,23 +452,50 @@ export default function App() {
     ]);
     const unitScore = (cid, wid, arr) => arr.length ? Math.round(arr.filter((b) => done[`${cid}|${wid}|${b.id}`]).length / arr.length * 100) : 0;
 
+    /* ---------- Adoption layer: scoring + rollups (additive, not wave-scoped) ----------
+       taskScore: graded -> % of target reached, direction-aware; binary -> 100 or 0.
+       groupScore / enablerScore: plain average of the level below (no per-item weight given).
+       toolAdoptionScore: weighted average of enabler scores, using each enabler's weight.
+       countryAdoptionScore: weighted average of each tool's score, weighted by how many
+       rollout scopes (BUs/offers) that tool covers in the country. */
+    const taskScore = (task, value) => {
+        if (value == null || value === "") return null;
+        const v = Number(value);
+        if (task.scoringType === "binary") return v ? 100 : 0;
+        const t = Number(task.target) || 0;
+        if (t <= 0) return 100;
+        const pct = task.direction === "lowerIsBetter" ? 100 - ((v - t) / t) * 100 : (v / t) * 100;
+        return Math.max(0, Math.min(100, Math.round(pct)));
+    };
+    const scoreStatus = (s) => s == null ? null : s >= 85 ? "green" : s >= 60 ? "amber" : "red";
+    const STATUS_COLOR = { green: C.low, amber: C.med, red: C.high };
+    const adoptGroupScore = (cid, toolId, group) => {
+        const scores = group.tasks.map((t) => taskScore(t, adoptionChecks[`${cid}|${toolId}|${t.id}`]?.value)).filter((s) => s != null);
+        return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+    };
+    const adoptEnablerScore = (cid, toolId, enabler) => {
+        const scores = enabler.groups.map((g) => adoptGroupScore(cid, toolId, g)).filter((s) => s != null);
+        return scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+    };
+    const toolAdoptionScore = (cid, toolId) => {
+        const parts = adoptionEnablers.map((e) => ({ s: adoptEnablerScore(cid, toolId, e), w: Number(e.weight) || 1 })).filter((x) => x.s != null);
+        if (!parts.length) return null;
+        const totW = parts.reduce((a, x) => a + x.w, 0) || parts.length;
+        return Math.round(parts.reduce((a, x) => a + x.s * x.w, 0) / totW);
+    };
+    const scopesOf = (cid, toolId) => (adoptionScopes || []).filter((s) => s.countryId === cid && s.toolId === toolId);
+    const toolsAdoptedIn = (cid) => { const ids = new Set((adoptionScopes || []).filter((s) => s.countryId === cid).map((s) => s.toolId)); return tools.filter((t) => ids.has(t.id)); };
+    const countryAdoptionScore = (cid) => {
+        const parts = toolsAdoptedIn(cid).map((t) => ({ s: toolAdoptionScore(cid, t.id), w: Math.max(1, scopesOf(cid, t.id).length) })).filter((x) => x.s != null);
+        if (!parts.length) return null;
+        const totW = parts.reduce((a, x) => a + x.w, 0) || parts.length;
+        return Math.round(parts.reduce((a, x) => a + x.s * x.w, 0) / totW);
+    };
+
     const readiness = (cid, wid) => {
         const us = enablers(cid, wid);
-        const blockUnits = us.filter((u) => u.kind !== "tool");
-        const toolUnits = us.filter((u) => u.kind === "tool");
-        if (!toolUnits.length) {
-            const totW = blockUnits.reduce((a, u) => a + u.weight, 0) || 1;
-            return Math.round(blockUnits.reduce((a, u) => a + unitScore(cid, wid, u.bricks) * u.weight, 0) / totW);
-        }
-        const blockTotW = blockUnits.reduce((a, u) => a + u.weight, 0);
-        const toolSetupW = Math.max(0, 100 - blockTotW);
-        const blockScore = blockTotW > 0
-            ? blockUnits.reduce((a, u) => a + unitScore(cid, wid, u.bricks) * u.weight, 0) / blockTotW : 0;
-        const toolTotW = toolUnits.reduce((a, u) => a + u.weight, 0);
-        const toolScore = toolTotW > 0
-            ? toolUnits.reduce((a, u) => a + unitScore(cid, wid, u.bricks) * u.weight, 0) / toolTotW
-            : toolUnits.reduce((a, u) => a + unitScore(cid, wid, u.bricks), 0) / toolUnits.length;
-        return Math.round((blockScore * blockTotW + toolScore * toolSetupW) / 100);
+        const totW = us.reduce((a, u) => a + u.weight, 0) || 1;
+        return Math.round(us.reduce((a, u) => a + unitScore(cid, wid, u.bricks) * u.weight, 0) / totW);
     };
     const status = (v) => v >= 80 ? { t: "Ready", c: C.low } : v >= 60 ? { t: "On track", c: C.med } : v >= 40 ? { t: "At risk", c: "#c87a1a" } : { t: "Not ready", c: C.high };
     const nameOf = (id) => countries.find((c) => c.id === id)?.name ?? "—";
@@ -452,7 +521,7 @@ export default function App() {
        userId, when a valid UUID, is stamped onto brick_checks.updated_by so each
        imported/saved check is attributed to a user (the auth user id, or the
        Meta sheet's user_id — see the import + template below). */
-    const snapshot = () => ({ regions, countries, waves, offers, bus, tools, toolAssign, blocks, bricks, done, brickExcl, obstacles, offerBUs, waveCountry, offerWave });
+    const snapshot = () => ({ regions, countries, waves, offers, bus, tools, toolAssign, blocks, bricks, done, brickExcl, obstacles, offerBUs, waveCountry, offerWave, adoptionEnablers, adoptionScopes, adoptionChecks });
 
     const persist = async (d, userId) => {
         setSaveState({ status: "saving" });
@@ -509,7 +578,7 @@ export default function App() {
                 bricks: d.bricks.map((b) => ({ ...b, blockId: b.blockId ? mid(b.blockId) : null, toolId: b.toolId ? mid(b.toolId) : null })), // toolId references tools (name-resolved)
                 done: mmap(d.done),                 // country|wave|brick -> country & wave remapped
                 brickExcl: mmap(d.brickExcl),       // brick|scope        -> scope(wave/offer) remapped
-                obstacles: d.obstacles.map((o) => ({ ...o, countryIds: (o.countryIds || []).map(mid), waveIds: (o.waveIds || []).map(mid) })),
+                obstacles: d.obstacles.map((o) => ({ ...o, countryId: mid(o.countryId), waveId: mid(o.waveId) })),
                 offerBUs: mmap(d.offerBUs),           // offer|bu           -> both remapped
                 waveCountry: mmap(d.waveCountry),   // wave|country       -> both remapped
                 offerWave: mmap(d.offerWave),       // offer|wave         -> both remapped
@@ -520,6 +589,17 @@ export default function App() {
                     countryId: a.countryId ? mid(a.countryId) : null,
                     offerId: a.offerId ? mid(a.offerId) : null,
                     waveId: a.waveId ? mid(a.waveId) : null,
+                })),
+                // Adoption layer: registry ids are stable text (not name-resolved); only the
+                // tool/country/BU foreign keys need remapping.
+                adoptionEnablers: d.adoptionEnablers || [],
+                adoptionScopes: (d.adoptionScopes || []).map((s) => ({
+                    id: s.id, toolId: mid(s.toolId), countryId: mid(s.countryId),
+                    scopeLevel: s.scopeLevel || "Country", buId: s.buId ? mid(s.buId) : null,
+                    rolloutStatus: s.rolloutStatus || "planned", effectiveDate: s.effectiveDate,
+                })),
+                adoptionChecks: Object.fromEntries(Object.entries(d.adoptionChecks || {}).map(([k, v]) => {
+                    const [cid, tid, taskId] = k.split("|"); return [`${mid(cid)}|${mid(tid)}|${taskId}`, v];
                 })),
             };
 
@@ -682,10 +762,27 @@ export default function App() {
             // Link tables carry a surrogate id (DB default) + a UNIQUE natural key.
             // Send only the natural-key columns; upsert/prune on that key.
             await sync("obstacles", D.obstacles.map((o) => ({ id: o.id, title: o.title, owner: o.owner, severity: sevToDb(o.severity), resolution: o.resolution, status: "open" })), ["id"]);
-            await sync("obstacle_countries", D.obstacles.flatMap((o) => (o.countryIds || []).map((cid) => ({ obstacle_id: o.id, country_id: cid }))), ["obstacle_id", "country_id"], false);
-            await sync("obstacle_waves", D.obstacles.flatMap((o) => (o.waveIds || []).map((wid) => ({ obstacle_id: o.id, wave_id: wid }))), ["obstacle_id", "wave_id"], false);
+            await sync("obstacle_countries", D.obstacles.filter((o) => o.countryId).map((o) => ({ obstacle_id: o.id, country_id: o.countryId })), ["obstacle_id", "country_id"], false);
+            await sync("obstacle_waves", D.obstacles.filter((o) => o.waveId).map((o) => ({ obstacle_id: o.id, wave_id: o.waveId })), ["obstacle_id", "wave_id"], false);
             await sync("obstacle_impacts", D.obstacles.flatMap((o) => (o.blocks || []).filter((b) => b !== o.id).map((b) => ({ obstacle_id: o.id, blocked_obstacle_id: b }))), ["obstacle_id", "blocked_obstacle_id"], false);
             await sync("obstacle_blocks", D.obstacles.flatMap((o) => (o.blockIds || []).map((b) => ({ obstacle_id: o.id, block_id: b }))), ["obstacle_id", "block_id"], false);
+
+            // --- Adoption layer: registry (global) + rollout scopes + measured checks ----
+            await sync("adoption_enablers", D.adoptionEnablers.map((e, i) => ({ id: e.id, name: e.name, weight: Number(e.weight) || 0, sort_order: i })), ["id"]);
+            await sync("adoption_groups", D.adoptionEnablers.flatMap((e) => e.groups.map((g, gi) => ({ id: g.id, enabler_id: e.id, name: g.name, sort_order: gi }))), ["id"]);
+            await sync("adoption_tasks", D.adoptionEnablers.flatMap((e) => e.groups.flatMap((g) => g.tasks.map((t, ti) => ({
+                id: t.id, group_id: g.id, name: t.name, scoring_type: t.scoringType || "graded",
+                target: t.scoringType === "binary" ? null : (t.target ?? null),
+                direction: t.direction || "higherIsBetter", measurement_window: t.measurementWindow || null, sort_order: ti,
+            })))), ["id"]);
+            await sync("adoption_tool_scopes", D.adoptionScopes.filter((s) => toolIds.has(s.toolId) && countryIds.has(s.countryId)).map((s) => ({
+                id: isUUID(s.id) ? s.id : uid(), tool_id: s.toolId, country_id: s.countryId, scope_level: s.scopeLevel,
+                bu_id: s.buId || null, rollout_status: s.rolloutStatus, effective_date: toISODate(s.effectiveDate),
+            })), ["id"]);
+            await sync("adoption_checks", Object.entries(D.adoptionChecks).filter(([k]) => { const [cid, tid] = k.split("|"); return countryIds.has(cid) && toolIds.has(tid); }).map(([k, v]) => {
+                const [country_id, tool_id, task_id] = k.split("|");
+                return { country_id, tool_id, task_id, value: v.value === "" || v.value == null ? null : Number(v.value), owner: v.owner || null, measured_at: v.measuredAt ? toISODate(v.measuredAt) : null };
+            }), ["country_id", "tool_id", "task_id"]);
 
             setSaveState({ status: "saved", at: `${todayStr()} ${new Date().toLocaleTimeString()}` });
             return true;
@@ -722,12 +819,33 @@ export default function App() {
                 const oc = await g("obstacle_countries"), ow2 = await g("obstacle_waves"), oi = await g("obstacle_impacts"), ob2 = await g("obstacle_blocks");
                 setObstacles(Ob.map((o) => ({
                     id: o.id, title: o.title, owner: o.owner || "", severity: sevFromDb(o.severity), resolution: o.resolution || "",
-                    countryIds: oc.filter((x) => x.obstacle_id === o.id).map((x) => x.country_id),
-                    waveIds: ow2.filter((x) => x.obstacle_id === o.id).map((x) => x.wave_id),
+                    countryId: oc.find((x) => x.obstacle_id === o.id)?.country_id,
+                    waveId: ow2.find((x) => x.obstacle_id === o.id)?.wave_id,
                     blocks: oi.filter((x) => x.obstacle_id === o.id).map((x) => x.blocked_obstacle_id),
                     blockIds: ob2.filter((x) => x.obstacle_id === o.id).map((x) => x.block_id),
                 })));
             }
+            // Adoption layer: own try/catch so a DB that hasn't run the adoption
+            // migration yet still loads every other module normally.
+            try {
+                const AE = await g("adoption_enablers");
+                if (AE.length) {
+                    const AG = await g("adoption_groups"), AT = await g("adoption_tasks");
+                    const groupsByEnabler = {}; AG.forEach((gr) => (groupsByEnabler[gr.enabler_id] ||= []).push(gr));
+                    const tasksByGroup = {}; AT.forEach((t) => (tasksByGroup[t.group_id] ||= []).push(t));
+                    setAdoptionEnablers(by(AE).map((e) => ({
+                        id: e.id, name: e.name, weight: Number(e.weight) || 0,
+                        groups: by(groupsByEnabler[e.id] || []).map((gr) => ({
+                            id: gr.id, name: gr.name,
+                            tasks: by(tasksByGroup[gr.id] || []).map((t) => ({ id: t.id, name: t.name, scoringType: t.scoring_type, target: t.target, direction: t.direction, measurementWindow: t.measurement_window })),
+                        })),
+                    })));
+                }
+                const ATS = await g("adoption_tool_scopes");
+                setAdoptionScopes(ATS.map((r) => ({ id: r.id, toolId: r.tool_id, countryId: r.country_id, scopeLevel: r.scope_level, buId: r.bu_id, rolloutStatus: r.rollout_status, effectiveDate: fromISO(r.effective_date) || "" })));
+                const ACk = await g("adoption_checks");
+                setAdoptionChecks(Object.fromEntries(ACk.map((r) => [`${r.country_id}|${r.tool_id}|${r.task_id}`, { value: r.value, owner: r.owner || "", measuredAt: fromISO(r.measured_at) || "" }])));
+            } catch { /* adoption migration not run yet -> keep adoption seeds */ }
         } catch { /* any failure -> keep seeds, app still works */ }
     };
 
@@ -757,59 +875,98 @@ export default function App() {
                     <button title="Mark all milestones done" aria-label={`Mark all milestones done for ${c.name}`} onClick={() => setCountryAll(c.id, wid, true)} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.low }}><CheckCheck size={16} /></button>
                     <button title="Clear all milestones" aria-label={`Clear all milestones for ${c.name}`} onClick={() => setCountryAll(c.id, wid, false)} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.soft }}><Eraser size={16} /></button>
                 </div>
-                {open && (() => {
-                    const blockUnits = units.filter(u => u.kind !== "tool");
-                    const toolUnits = units.filter(u => u.kind === "tool");
-                    const renderUnit = (u) => {
-                        const sc = unitScore(c.id, wid, u.bricks);
-                        const okey = `${c.id}|${wid}|${u.id}`, bopen = openBlock[okey];
-                        return (
-                            <div key={u.id} className="rounded-lg p-2" style={{ background: C.white }}>
-                                <button className="flex w-full items-center gap-2 rounded text-left focus:outline-none focus:ring-2" aria-expanded={!!bopen} onClick={() => setOpenBlock({ ...openBlock, [okey]: !bopen })}>
-                                    {bopen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
-                                    <span className="w-44 text-sm font-medium" style={{ color: C.ink }}>{u.name}</span>
-                                    <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: u.kind === "tool" ? C.yellow : C.green, color: C.soft }}>{u.kind}</span>
-                                    <span className="text-xs" style={{ color: C.soft }}>weight {u.weight}</span>
-                                    <div className="h-2 flex-1 overflow-hidden rounded-full" style={{ background: C.line }}><div className="h-full" style={{ width: `${sc}%`, background: status(sc).c }} /></div>
-                                    <span className="w-10 text-right text-sm font-semibold" style={{ color: C.ink }}>{sc}%</span>
-                                </button>
-                                {bopen && (
-                                    <div className="mt-2 grid gap-1 pl-6">
-                                        {u.bricks.length ? u.bricks.map((brick) => {
-                                            const dkey = `${c.id}|${wid}|${brick.id}`, d = !!done[dkey];
-                                            return (
-                                                <button key={brick.id} className="flex items-center gap-2 rounded text-left text-sm focus:outline-none focus:ring-2" onClick={() => setDone({ ...done, [dkey]: !d })}>
-                                                    {d ? <CheckSquare size={16} aria-hidden style={{ color: C.low }} /> : <Square size={16} aria-hidden style={{ color: C.soft }} />}
-                                                    <span style={{ color: C.ink, textDecoration: d ? "line-through" : "none" }}>{brick.name}</span>
-                                                </button>
-                                            );
-                                        }) : <span className="text-xs" style={{ color: C.soft }}>No milestones apply here in this wave.</span>}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    };
-                    return (
-                        <div className="mt-3 grid gap-2 border-t pt-3" style={{ borderColor: C.line }}>
-                            {units.length === 0 && <span className="text-xs" style={{ color: C.soft }}>No blocks or tools apply to this country in this wave.</span>}
-                            {blockUnits.map(renderUnit)}
-                            {toolUnits.length > 0 && (() => {
-                                const blockTotW = blockUnits.reduce((a, u) => a + u.weight, 0);
-                                const toolSetupW = Math.max(0, 100 - blockTotW);
-                                return (
-                                    <>
-                                        <div className="mt-1 flex items-center gap-2 rounded-lg px-2 py-1" style={{ background: C.yellow + "66" }}>
-                                            <span className="text-xs font-bold uppercase tracking-wide" style={{ color: C.soft }}>Tool setup</span>
-                                            <span className="text-xs" style={{ color: C.soft }}>· overall weight {toolSetupW}</span>
-                                            <span className="text-xs" style={{ color: C.soft }}>· individual weights optional</span>
+                {open && (
+                    <div className="mt-3 grid gap-2 border-t pt-3" style={{ borderColor: C.line }}>
+                        {units.length === 0 && <span className="text-xs" style={{ color: C.soft }}>No blocks or tools apply to this country in this wave.</span>}
+                        {units.map((u) => {
+                            const sc = unitScore(c.id, wid, u.bricks);
+                            const okey = `${c.id}|${wid}|${u.id}`, bopen = openBlock[okey];
+                            return (
+                                <div key={u.id} className="rounded-lg p-2" style={{ background: C.white }}>
+                                    <button className="flex w-full items-center gap-2 rounded text-left focus:outline-none focus:ring-2" aria-expanded={!!bopen} onClick={() => setOpenBlock({ ...openBlock, [okey]: !bopen })}>
+                                        {bopen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+                                        <span className="w-44 text-sm font-medium" style={{ color: C.ink }}>{u.name}</span>
+                                        <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: u.kind === "tool" ? C.yellow : C.green, color: C.soft }}>{u.kind}</span>
+                                        <span className="text-xs" style={{ color: C.soft }}>weight {u.weight}</span>
+                                        <div className="h-2 flex-1 overflow-hidden rounded-full" style={{ background: C.line }}><div className="h-full" style={{ width: `${sc}%`, background: status(sc).c }} /></div>
+                                        <span className="w-10 text-right text-sm font-semibold" style={{ color: C.ink }}>{sc}%</span>
+                                    </button>
+                                    {bopen && (
+                                        <div className="mt-2 grid gap-1 pl-6">
+                                            {u.bricks.length ? u.bricks.map((brick) => {
+                                                const dkey = `${c.id}|${wid}|${brick.id}`, d = !!done[dkey];
+                                                return (
+                                                    <button key={brick.id} className="flex items-center gap-2 rounded text-left text-sm focus:outline-none focus:ring-2" onClick={() => setDone({ ...done, [dkey]: !d })}>
+                                                        {d ? <CheckSquare size={16} aria-hidden style={{ color: C.low }} /> : <Square size={16} aria-hidden style={{ color: C.soft }} />}
+                                                        <span style={{ color: C.ink, textDecoration: d ? "line-through" : "none" }}>{brick.name}</span>
+                                                    </button>
+                                                );
+                                            }) : <span className="text-xs" style={{ color: C.soft }}>No milestones apply here in this wave.</span>}
                                         </div>
-                                        {toolUnits.map(renderUnit)}
-                                    </>
-                                );
-                            })()}
-                        </div>
-                    );
-                })()}
+                                    )}
+                                </div>
+                            );
+                        })}
+                        {toolsAdoptedIn(c.id).length > 0 && (
+                            <div className="mt-2 rounded-lg p-2" style={{ background: C.yellow }}>
+                                <div className="mb-1 flex items-center justify-between">
+                                    <span className="text-sm font-semibold" style={{ color: C.ink }}>Adoption (tool rollout)</span>
+                                    {(() => { const cs = countryAdoptionScore(c.id), st2 = scoreStatus(cs); return cs != null && (
+                                        <span className="text-sm font-bold" style={{ color: STATUS_COLOR[st2] }}>{cs}% {st2}</span>
+                                    ); })()}
+                                </div>
+                                <div className="grid gap-1">
+                                    {toolsAdoptedIn(c.id).map((tl) => {
+                                        const ts = toolAdoptionScore(c.id, tl.id), tst = scoreStatus(ts);
+                                        const tkey = `${c.id}|${tl.id}`, topen = openAdoptTool[tkey];
+                                        return (
+                                            <div key={tl.id} className="rounded-lg p-2" style={{ background: C.white }}>
+                                                <button className="flex w-full items-center gap-2 rounded text-left text-sm focus:outline-none focus:ring-2" aria-expanded={!!topen} onClick={() => setOpenAdoptTool({ ...openAdoptTool, [tkey]: !topen })}>
+                                                    {topen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+                                                    <span className="w-36 font-medium" style={{ color: C.ink }}>{tl.name}</span>
+                                                    <span className="flex-1" />
+                                                    <span className="font-semibold" style={{ color: ts == null ? C.soft : STATUS_COLOR[tst] }}>{ts == null ? "No data" : `${ts}% ${tst}`}</span>
+                                                </button>
+                                                {topen && (
+                                                    <div className="mt-2 grid gap-2 pl-6">
+                                                        {adoptionEnablers.map((en) => en.groups.map((gr) => (
+                                                            <div key={gr.id}>
+                                                                <p className="mb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: C.soft }}>{gr.name}</p>
+                                                                <div className="grid gap-1">
+                                                                    {gr.tasks.map((task) => {
+                                                                        const ck = `${c.id}|${tl.id}|${task.id}`, cur = adoptionChecks[ck] || {};
+                                                                        const sc = taskScore(task, cur.value), tsst = scoreStatus(sc);
+                                                                        return (
+                                                                            <div key={task.id} className="flex flex-wrap items-center gap-2 text-sm">
+                                                                                <span className="w-48" style={{ color: C.ink }}>{task.name}</span>
+                                                                                {task.scoringType === "binary" ? (
+                                                                                    <button onClick={() => setAdoptionChecks({ ...adoptionChecks, [ck]: { ...cur, value: cur.value ? 0 : 1 } })} className="rounded p-0.5 focus:outline-none focus:ring-2">
+                                                                                        {cur.value ? <CheckSquare size={16} style={{ color: C.low }} /> : <Square size={16} style={{ color: C.soft }} />}
+                                                                                    </button>
+                                                                                ) : (
+                                                                                    <input type="number" aria-label={`${task.name} value`} value={cur.value ?? ""} placeholder={`target ${task.target}`}
+                                                                                        onChange={(e) => setAdoptionChecks({ ...adoptionChecks, [ck]: { ...cur, value: e.target.value === "" ? "" : Number(e.target.value) } })}
+                                                                                        className="w-20 rounded-lg px-2 py-1" style={inputStyle} />
+                                                                                )}
+                                                                                <input value={cur.owner || ""} aria-label={`${task.name} owner`} placeholder="owner" onChange={(e) => setAdoptionChecks({ ...adoptionChecks, [ck]: { ...cur, owner: e.target.value } })} className="w-32 rounded-lg px-2 py-1 text-xs" style={inputStyle} />
+                                                                                <input value={cur.measuredAt || ""} aria-label={`${task.name} measured date`} placeholder="dd/mm/yyyy" onChange={(e) => setAdoptionChecks({ ...adoptionChecks, [ck]: { ...cur, measuredAt: e.target.value } })} className="w-24 rounded-lg px-2 py-1 text-xs" style={inputStyle} />
+                                                                                {sc != null && <span className="text-xs font-semibold" style={{ color: STATUS_COLOR[tsst] }}>{sc}%</span>}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        )))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </Card>
         );
     };
@@ -820,7 +977,7 @@ export default function App() {
             <div className="mb-4 flex flex-wrap items-end gap-3">
                 <Field label="View">
                     <div className="inline-flex overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }} role="group" aria-label="Readiness view">
-                        {[["region", "By region"], ["wave", "By wave"]].map(([val, lbl]) => (
+                        {[["wave", "By wave"], ["region", "By region"]].map(([val, lbl]) => (
                             <button key={val} onClick={() => setM1View(val)} aria-pressed={m1View === val}
                                 className="px-3 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2"
                                 style={{ background: m1View === val ? C.mid : C.white, color: m1View === val ? C.white : C.soft }}>{lbl}</button>
@@ -873,9 +1030,6 @@ export default function App() {
                     {m1Regions.map((r) => {
                         const cs = countries.filter((c) => c.regionId === r.id);
                         if (!cs.length) return null;
-                        // Only show waves that have at least one country in this region
-                        const rWaves = waves.filter((w) => cs.some((c) => waveCountry[`${w.id}|${c.id}`]));
-                        if (!rWaves.length) return null;
                         return (
                             <Card key={r.id} bg={C.green} style={{ marginBottom: 12 }}>
                                 <h3 className="mb-2 font-semibold" style={{ color: C.ink }}>{r.name}</h3>
@@ -883,14 +1037,14 @@ export default function App() {
                                     <table className="text-sm" style={{ color: C.ink }}>
                                         <thead>
                                             <tr><th className="px-2 py-1 text-left font-medium" style={{ color: C.soft }}>Country</th>
-                                                {rWaves.map((w) => <th key={w.id} className="px-2 py-1 text-left font-medium" style={{ color: C.soft }}>{w.name}</th>)}
+                                                {waves.map((w) => <th key={w.id} className="px-2 py-1 text-left font-medium" style={{ color: C.soft }}>{w.name}</th>)}
                                             </tr>
                                         </thead>
                                         <tbody>
                                             {cs.map((c) => (
                                                 <tr key={c.id}>
                                                     <td className="py-1 pr-3 font-medium">{c.name}</td>
-                                                    {rWaves.map((w) => {
+                                                    {waves.map((w) => {
                                                         const inWave = !!waveCountry[`${w.id}|${c.id}`];
                                                         if (!inWave) return <td key={w.id} className="px-2 py-1 text-center" style={{ color: C.line }}>—</td>;
                                                         const v = readiness(c.id, w.id), st = status(v);
@@ -920,9 +1074,7 @@ export default function App() {
 
     /* ======================= MODULE 2 — Obstacles & Risks ======================= */
     const filtered = obstacles.filter((o) =>
-        (fSev === "All" || o.severity === fSev) &&
-        (fCountry === "All" || (o.countryIds || []).includes(fCountry)) &&
-        (fWave === "All" || (o.waveIds || []).includes(fWave)));
+        (fSev === "All" || o.severity === fSev) && (fCountry === "All" || o.countryId === fCountry) && (fWave === "All" || o.waveId === fWave));
 
     const saveDraft = () => {
         if (!obDraft.title) return;
@@ -931,15 +1083,57 @@ export default function App() {
         setObDraft(null);
     };
 
+    const renderGraph = () => {
+        const ids = new Set(filtered.map((o) => o.id));
+        const edges = [];
+        filtered.forEach((o) => (o.blocks || []).forEach((t) => { if (ids.has(t)) edges.push({ from: o.id, to: t }); }));
+        const depth = {} as Record<string, number>;
+        filtered.forEach((o) => { depth[o.id] = 0; });
+        for (let i = 0; i < filtered.length; i++) edges.forEach((e) => { depth[e.to] = Math.max(depth[e.to], depth[e.from] + 1); });
+        const byDepth = {} as Record<number, string[]>;
+        filtered.forEach((o) => { const d = depth[o.id]; (byDepth[d] ||= []).push(o.id); });
+        const pos = {} as Record<string, { x: number; y: number }>;
+        Object.keys(byDepth).forEach((d) => byDepth[Number(d)].forEach((id, i) => { pos[id] = { x: Number(d), y: i }; }));
+        const colW = 230, rowH = 90, nodeW = 190, nodeH = 56;
+        const maxD = Math.max(0, ...filtered.map((o) => depth[o.id]));
+        const maxR = Math.max(1, ...Object.values(byDepth).map((a) => a.length));
+        const W = (maxD + 1) * colW + 20, H = maxR * rowH + 20;
+        const cx = (id) => pos[id].x * colW + 20, cy = (id) => pos[id].y * rowH + 20;
+        return (
+            <Card bg={C.white}>
+                <p className="mb-2 text-sm" style={{ color: C.soft }}>Arrows point from an obstacle to what it blocks. Left = upstream (resolve first).</p>
+                <div className="overflow-auto" style={{ maxWidth: "100%" }}>
+                    <svg width={W} height={H} role="img" aria-label="Obstacle dependency graph; see list view for a text equivalent" style={{ minWidth: W }}>
+                        <defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill={C.soft} /></marker></defs>
+                        {edges.map((e, i) => {
+                            const x1 = cx(e.from) + nodeW, y1 = cy(e.from) + nodeH / 2, x2 = cx(e.to), y2 = cy(e.to) + nodeH / 2, mx = (x1 + x2) / 2;
+                            return <path key={i} d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2 - 2},${y2}`} fill="none" stroke={C.soft} strokeWidth={2} markerEnd="url(#ar)" />;
+                        })}
+                        {filtered.map((o) => (
+                            <g key={o.id}>
+                                <rect x={cx(o.id)} y={cy(o.id)} width={nodeW} height={nodeH} rx={10} fill={SEV[o.severity] + "22"} stroke={SEV[o.severity]} strokeWidth={2} />
+                                <text x={cx(o.id) + 10} y={cy(o.id) + 20} fontSize="11" fontWeight="700" fill={SEV[o.severity]}>{o.severity}</text>
+                                <text x={cx(o.id) + 10} y={cy(o.id) + 38} fontSize="11" fill={C.ink}>{o.title.length > 26 ? o.title.slice(0, 24) + "…" : o.title}</text>
+                            </g>
+                        ))}
+                    </svg>
+                </div>
+                {!filtered.length && <p className="text-sm" style={{ color: C.soft }}>No obstacles match these filters.</p>}
+            </Card>
+        );
+    };
+
     const renderM2 = () => (
         <>
             <SaveBar onSave={saveAll} state={saveState} />
             <div className="mb-4 flex flex-wrap items-end gap-3">
-                <Field label="Severity"><select value={fSev} onChange={(e) => setFSev(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>{["All", "High", "Critical", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
+                <Field label="Severity"><select value={fSev} onChange={(e) => setFSev(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>{["All", "High", "Medium", "Low"].map((s) => <option key={s}>{s}</option>)}</select></Field>
                 <Field label="Country"><select value={fCountry} onChange={(e) => setFCountry(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}><option value="All">All</option>{countries.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
                 <Field label="Wave"><select value={fWave} onChange={(e) => setFWave(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}><option value="All">All</option>{waves.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
                 <div className="ml-auto flex gap-2">
-                    <Btn onClick={() => setObDraft({ _new: true, id: gid(), title: "", owner: "", severity: "Medium", countryIds: [], waveIds: [], resolution: "", blocks: [], blockIds: [] })}><Plus size={16} /> Add</Btn>
+                    <Btn kind={view === "list" ? "solid" : "ghost"} onClick={() => setView("list")}><List size={16} /> List</Btn>
+                    <Btn kind={view === "graph" ? "solid" : "ghost"} onClick={() => setView("graph")}><GitBranch size={16} /> Graph</Btn>
+                    <Btn onClick={() => setObDraft({ _new: true, id: gid(), title: "", owner: "", severity: "Medium", countryId: countries[0]?.id, waveId: waves[0]?.id, resolution: "", blocks: [], blockIds: [] })}><Plus size={16} /> Add</Btn>
                 </div>
             </div>
 
@@ -947,26 +1141,28 @@ export default function App() {
                 <ObstacleForm value={obDraft} onChange={setObDraft} onSave={saveDraft} onCancel={() => setObDraft(null)} countries={countries} waves={waves} blocks={blocks} obstacles={obstacles} />
             )}
 
-            <div className="grid gap-2">
-                {filtered.map((o) => (
-                    <Card key={o.id}>
-                        <div className="flex flex-wrap items-start gap-3">
-                            <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2"><SevBadge s={o.severity} /><span className="font-semibold" style={{ color: C.ink }}>{o.title}</span></div>
-                                <p className="mt-1 text-sm" style={{ color: C.soft }}>Owner: <b style={{ color: C.ink }}>{o.owner || "—"}</b> · {(o.countryIds || []).map(nameOf).filter(Boolean).join(", ") || "—"} · {(o.waveIds || []).map((wid) => waves.find((w) => w.id === wid)?.name).filter(Boolean).join(", ") || "—"}</p>
-                                <p className="mt-1 text-sm" style={{ color: C.ink }}>Resolution: {o.resolution || "—"}</p>
-                                {(o.blockIds || []).length > 0 && <p className="mt-1 text-xs" style={{ color: C.soft }}>Affects blocks: {o.blockIds.map((id) => blocks.find((b) => b.id === id)?.name).filter(Boolean).join(", ")}</p>}
-                                {(o.blocks || []).length > 0 && <div className="mt-2 rounded-lg p-2 text-sm" style={{ background: C.green }}><b style={{ color: C.ink }}>Blocks:</b> {o.blocks.map(obTitle).join(", ")}</div>}
+            {view === "graph" ? renderGraph() : (
+                <div className="grid gap-2">
+                    {filtered.map((o) => (
+                        <Card key={o.id}>
+                            <div className="flex flex-wrap items-start gap-3">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2"><SevBadge s={o.severity} /><span className="font-semibold" style={{ color: C.ink }}>{o.title}</span></div>
+                                    <p className="mt-1 text-sm" style={{ color: C.soft }}>Owner: <b style={{ color: C.ink }}>{o.owner || "—"}</b> · {nameOf(o.countryId)} · {waves.find((w) => w.id === o.waveId)?.name || "—"}</p>
+                                    <p className="mt-1 text-sm" style={{ color: C.ink }}>Resolution: {o.resolution || "—"}</p>
+                                    {(o.blockIds || []).length > 0 && <p className="mt-1 text-xs" style={{ color: C.soft }}>Affects blocks: {o.blockIds.map((id) => blocks.find((b) => b.id === id)?.name).filter(Boolean).join(", ")}</p>}
+                                    {(o.blocks || []).length > 0 && <div className="mt-2 rounded-lg p-2 text-sm" style={{ background: C.green }}><b style={{ color: C.ink }}>Blocks:</b> {o.blocks.map(obTitle).join(", ")}</div>}
+                                </div>
+                                <div className="flex gap-1">
+                                    <button aria-label={`Edit ${o.title}`} title="Edit" onClick={() => setObDraft({ ...o, blocks: [...(o.blocks || [])], blockIds: [...(o.blockIds || [])] })} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.mid }}><Pencil size={16} /></button>
+                                    <button aria-label={`Delete ${o.title}`} title="Delete" onClick={() => setObstacles(obstacles.filter((x) => x.id !== o.id))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={16} /></button>
+                                </div>
                             </div>
-                            <div className="flex gap-1">
-                                <button aria-label={`Edit ${o.title}`} title="Edit" onClick={() => setObDraft({ ...o, countryIds: [...(o.countryIds || [])], waveIds: [...(o.waveIds || [])], blocks: [...(o.blocks || [])], blockIds: [...(o.blockIds || [])] })} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.mid }}><Pencil size={16} /></button>
-                                <button aria-label={`Delete ${o.title}`} title="Delete" onClick={() => setObstacles(obstacles.filter((x) => x.id !== o.id))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={16} /></button>
-                            </div>
-                        </div>
-                    </Card>
-                ))}
-                {!filtered.length && <p className="text-sm" style={{ color: C.soft }}>No obstacles match these filters.</p>}
-            </div>
+                        </Card>
+                    ))}
+                    {!filtered.length && <p className="text-sm" style={{ color: C.soft }}>No obstacles match these filters.</p>}
+                </div>
+            )}
         </>
     );
 
@@ -1050,8 +1246,7 @@ export default function App() {
                             <div className="flex flex-wrap items-center gap-2">
                                 <button aria-label="Toggle milestones" onClick={() => setOpenB3({ ...openB3, [tl.id]: !open })} className="rounded p-1 focus:outline-none focus:ring-2">{open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</button>
                                 <span className="min-w-0 flex-1 font-medium" style={{ color: C.ink }}>{tl.name}</span>
-                                <span className="text-sm" style={{ color: C.ink }}>Weight</span>
-                                <input type="number" min={0} max={100} value={tl.weight ?? 0} aria-label={`${tl.name} weight`} onChange={(e) => setTools(tools.map((x) => x.id === tl.id ? { ...x, weight: Number(e.target.value) || 0 } : x))} className="w-16 rounded-lg px-2 py-1.5" style={inputStyle} />
+                                <span className="text-xs" style={{ color: C.soft }}>weight {Number(tl.weight) || 0}</span>
                                 <span className="rounded-full px-2 py-0.5 text-xs" style={{ background: C.white, color: C.soft }}>{tbk.length} milestone{tbk.length !== 1 ? "s" : ""}</span>
                             </div>
                             {open && (
@@ -1071,16 +1266,68 @@ export default function App() {
                 })}
                 {!tools.length && <Card bg={C.yellow}><p className="text-sm" style={{ color: C.ink }}>No tools yet. Add tools in <b>Settings → Tools</b>, then define their milestones here.</p></Card>}
             </div>
+
+            <h3 className="mb-2 mt-6 text-sm font-bold uppercase tracking-wide" style={{ color: C.soft }}>Adoption enablers (registry)</h3>
+            <p className="mb-3 text-sm" style={{ color: C.soft }}>One shared set of <b>enablers → groups → tasks</b>, used to track how well every tool is actually being adopted (training, usage, reinforcement). Enter values per country and tool in <b>Module 1 → Adoption</b>. Assign which tool runs where in <b>Settings → Tool adoption scopes</b>.</p>
+            <div className="grid gap-2">
+                {adoptionEnablers.map((en) => {
+                    const open = openAdoptEnabler[en.id];
+                    return (
+                        <Card key={en.id} bg={C.yellow}>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <button aria-label="Toggle enabler" onClick={() => setOpenAdoptEnabler({ ...openAdoptEnabler, [en.id]: !open })} className="rounded p-1 focus:outline-none focus:ring-2">{open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}</button>
+                                <input value={en.name} aria-label="Enabler name" onChange={(e) => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, name: e.target.value } : x))} className="min-w-0 flex-1 rounded-lg px-3 py-1.5 font-medium" style={inputStyle} />
+                                <div className="flex items-center gap-2"><span className="text-sm" style={{ color: C.ink }}>Weight</span><input type="number" min={0} value={en.weight} aria-label={`${en.name} weight`} onChange={(e) => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, weight: Number(e.target.value) || 0 } : x))} className="w-16 rounded-lg px-2 py-1.5" style={inputStyle} /></div>
+                                <button aria-label={`Delete ${en.name}`} onClick={() => setAdoptionEnablers(adoptionEnablers.filter((x) => x.id !== en.id))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={16} /></button>
+                            </div>
+                            {open && (
+                                <div className="mt-2 grid gap-2 pl-9">
+                                    {en.groups.map((gr) => (
+                                        <div key={gr.id} className="rounded-lg p-2" style={{ background: C.white }}>
+                                            <div className="flex items-center gap-2">
+                                                <span style={{ color: C.soft }}>▸</span>
+                                                <input value={gr.name} aria-label="Group name" onChange={(e) => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, groups: x.groups.map((g) => g.id === gr.id ? { ...g, name: e.target.value } : g) } : x))} className="min-w-0 flex-1 rounded-lg px-2 py-1 text-sm font-medium" style={inputStyle} />
+                                                <button aria-label={`Delete group ${gr.name}`} onClick={() => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, groups: x.groups.filter((g) => g.id !== gr.id) } : x))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={14} /></button>
+                                            </div>
+                                            <div className="mt-2 grid gap-1 pl-6">
+                                                {gr.tasks.map((task) => (
+                                                    <div key={task.id} className="flex flex-wrap items-center gap-2 text-sm">
+                                                        <span style={{ color: C.soft }}>•</span>
+                                                        <input value={task.name} aria-label="Task name" onChange={(e) => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, groups: x.groups.map((g) => g.id === gr.id ? { ...g, tasks: g.tasks.map((t) => t.id === task.id ? { ...t, name: e.target.value } : t) } : g) } : x))} className="min-w-0 flex-1 rounded-lg px-2 py-1 text-sm" style={inputStyle} />
+                                                        <select value={task.scoringType} aria-label="Scoring type" onChange={(e) => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, groups: x.groups.map((g) => g.id === gr.id ? { ...g, tasks: g.tasks.map((t) => t.id === task.id ? { ...t, scoringType: e.target.value } : t) } : g) } : x))} className="rounded-lg px-2 py-1 text-xs" style={inputStyle}>
+                                                            <option value="graded">Graded</option><option value="binary">Binary</option>
+                                                        </select>
+                                                        {task.scoringType === "graded" && (<>
+                                                            <input type="number" value={task.target ?? ""} aria-label="Target" placeholder="target" onChange={(e) => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, groups: x.groups.map((g) => g.id === gr.id ? { ...g, tasks: g.tasks.map((t) => t.id === task.id ? { ...t, target: Number(e.target.value) || 0 } : t) } : g) } : x))} className="w-16 rounded-lg px-2 py-1 text-xs" style={inputStyle} />
+                                                            <select value={task.direction || "higherIsBetter"} aria-label="Direction" onChange={(e) => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, groups: x.groups.map((g) => g.id === gr.id ? { ...g, tasks: g.tasks.map((t) => t.id === task.id ? { ...t, direction: e.target.value } : t) } : g) } : x))} className="rounded-lg px-2 py-1 text-xs" style={inputStyle}>
+                                                                <option value="higherIsBetter">Higher is better</option><option value="lowerIsBetter">Lower is better</option>
+                                                            </select>
+                                                        </>)}
+                                                        <button aria-label={`Delete task ${task.name}`} onClick={() => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, groups: x.groups.map((g) => g.id === gr.id ? { ...g, tasks: g.tasks.filter((t) => t.id !== task.id) } : g) } : x))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={14} /></button>
+                                                    </div>
+                                                ))}
+                                                <div><Btn kind="ghost" onClick={() => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, groups: x.groups.map((g) => g.id === gr.id ? { ...g, tasks: [...g.tasks, { id: uid(), name: "New task", scoringType: "graded", target: 80, direction: "higherIsBetter" }] } : g) } : x))}><Plus size={14} /> Add task</Btn></div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <div><Btn kind="ghost" onClick={() => setAdoptionEnablers(adoptionEnablers.map((x) => x.id === en.id ? { ...x, groups: [...x.groups, { id: uid(), name: "New group", tasks: [] }] } : x))}><Plus size={14} /> Add group</Btn></div>
+                                </div>
+                            )}
+                        </Card>
+                    );
+                })}
+                <div><Btn onClick={() => setAdoptionEnablers([...adoptionEnablers, { id: uid(), name: "New enabler", weight: 1, groups: [] }])}><Plus size={16} /> Add enabler</Btn></div>
+            </div>
         </>
     );
 
     /* ======================= MODULE 4 — SteerCo Pack ======================= */
-    const m4C = countries.filter((c) => c.regionId === m4Region && !!waveCountry[`${m4Wave}|${c.id}`]);
+    const m4C = countries.filter((c) => c.regionId === m4Region);
     const chartData = m4C.map((c) => ({ name: c.name, readiness: readiness(c.id, m4Wave) }));
-    const m4Ob = obstacles.filter((o) => m4C.some((c) => (o.countryIds || []).includes(c.id)) && (o.waveIds || []).includes(m4Wave)).sort((a, b) => (sevRank[b.severity] ?? 0) - (sevRank[a.severity] ?? 0)).slice(0, 3);
+    const m4Ob = obstacles.filter((o) => m4C.some((c) => c.id === o.countryId) && o.waveId === m4Wave).sort((a, b) => sevRank[b.severity] - sevRank[a.severity]).slice(0, 3);
     const avg = chartData.length ? Math.round(chartData.reduce((a, d) => a + d.readiness, 0) / chartData.length) : 0;
     const readyCount = chartData.filter((d) => d.readiness >= 80).length;
-    const highCount = obstacles.filter((o) => m4C.some((c) => (o.countryIds || []).includes(c.id)) && (o.waveIds || []).includes(m4Wave) && o.severity === "High").length;
+    const highCount = obstacles.filter((o) => m4C.some((c) => c.id === o.countryId) && o.severity === "High").length;
     const regionName = regions.find((r) => r.id === m4Region)?.name || "";
 
     const downloadPNG = () => {
@@ -1105,53 +1352,12 @@ export default function App() {
             { Metric: "Avg readiness (%)", Value: avg },
             { Metric: "Countries ready", Value: `${readyCount}/${chartData.length}` },
             { Metric: "High-severity risks", Value: highCount },
-            { Metric: "Total obstacles (region)", Value: obstacles.filter((o) => m4C.some((c) => (o.countryIds || []).includes(c.id))).length },
+            { Metric: "Total obstacles (region)", Value: obstacles.filter((o) => m4C.some((c) => c.id === o.countryId)).length },
         ];
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Summary");
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(chartData.map((d) => ({ Country: d.name, "Readiness %": d.readiness }))), "Readiness");
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(m4Ob.map((o, i) => ({ "#": i + 1, Severity: o.severity, Obstacle: o.title, Countries: (o.countryIds || []).map(nameOf).join(", "), Owner: o.owner, Resolution: o.resolution }))), "Top obstacles");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(m4Ob.map((o, i) => ({ "#": i + 1, Severity: o.severity, Obstacle: o.title, Country: nameOf(o.countryId), Owner: o.owner, Resolution: o.resolution }))), "Top obstacles");
         XLSX.writeFile(wb, `steerco_pack_${regionName}_${todayStr().replace(/\//g, "-")}.xlsx`);
-    };
-
-    const downloadPDF = () => {
-        const waveName = waves.find((w) => w.id === m4Wave)?.name || "";
-        const w = window.open("", "_blank");
-        if (!w) { setImportMsg("Pop-up blocked — allow pop-ups and try again."); return; }
-        const rows = (arr, cols) => arr.map((r, i) => `<tr>${cols.map((c) => `<td>${c(r, i)}</td>`).join("")}</tr>`).join("");
-        w.document.write(`<!DOCTYPE html><html><head><title>SteerCo Pack – ${regionName} / ${waveName}</title>
-<style>
-  body{font-family:system-ui,sans-serif;padding:28px 36px;color:#1f2a44;max-width:800px;margin:0 auto}
-  h1{font-size:20px;margin:0 0 4px}p.sub{color:#51607d;font-size:12px;margin:0 0 20px}
-  h2{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#51607d;margin:20px 0 8px;border-bottom:1px solid #c3d0e6;padding-bottom:4px}
-  .stats{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:12px}
-  .stat{background:#f0f4fa;border-radius:8px;padding:10px 18px;min-width:120px}
-  .stat b{display:block;font-size:24px;color:#1f2a44}.stat span{font-size:12px;color:#51607d}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th{background:#f0f4fa;padding:6px 10px;text-align:left;font-weight:600;color:#51607d}
-  td{padding:6px 10px;border-bottom:1px solid #e5edf8;color:#1f2a44}
-  .high{color:#b23b2e}.med{color:#9a6b12}.low{color:#3a7d44}
-  @media print{body{padding:10px}}
-</style></head><body>
-<h1>SteerCo Pack — ${regionName} / ${waveName}</h1>
-<p class="sub">Generated: ${todayStr()}</p>
-<div class="stats">
-  <div class="stat"><b>${avg}%</b><span>Avg readiness</span></div>
-  <div class="stat"><b>${readyCount}/${chartData.length}</b><span>Countries ready</span></div>
-  <div class="stat"><b>${highCount}</b><span>High-severity risks</span></div>
-  <div class="stat"><b>${obstacles.filter((o) => m4C.some((c) => (o.countryIds || []).includes(c.id))).length}</b><span>Total obstacles</span></div>
-</div>
-<h2>Readiness by Country</h2>
-<table><thead><tr><th>Country</th><th>Readiness %</th><th>Status</th></tr></thead><tbody>
-${rows(chartData, [(d) => d.name, (d) => d.readiness + "%", (d) => status(d.readiness).t])}
-</tbody></table>
-<h2>Top Obstacles</h2>
-<table><thead><tr><th>#</th><th>Severity</th><th>Obstacle</th><th>Country</th><th>Owner</th><th>Resolution</th></tr></thead><tbody>
-${rows(m4Ob, [(o, i) => String(i + 1), (o) => o.severity, (o) => o.title, (o) => (o.countryIds || []).map(nameOf).join(", "), (o) => o.owner, (o) => o.resolution])}
-${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for this region/wave.</td></tr>" : ""}
-</tbody></table>
-</body></html>`);
-        w.document.close();
-        setTimeout(() => w.print(), 400);
     };
 
     const renderM4 = () => (
@@ -1162,14 +1368,13 @@ ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for thi
                 <Field label="Wave"><select value={m4Wave} onChange={(e) => setM4Wave(e.target.value)} className="rounded-lg px-3 py-1.5" style={inputStyle}>{waves.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></Field>
                 <div className="ml-auto flex gap-2">
                     <Btn kind="ghost" onClick={downloadPNG}><Download size={16} /> Graph (PNG)</Btn>
-                    <Btn kind="ghost" onClick={downloadPack}><FileDown size={16} /> Excel</Btn>
-                    <Btn onClick={downloadPDF}><FileDown size={16} /> Download PDF</Btn>
+                    <Btn onClick={downloadPack}><FileDown size={16} /> Download pack (Excel)</Btn>
                 </div>
             </div>
             {importMsg && <p className="mb-3 text-sm" style={{ color: C.high }}>{importMsg}</p>}
             <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Stat label="Avg readiness" value={`${avg}%`} bg={C.blue} /><Stat label="Countries ready" value={`${readyCount}/${chartData.length}`} bg={C.green} />
-                <Stat label="High-severity risks" value={highCount} bg={C.yellow} /><Stat label="Total obstacles" value={obstacles.filter((o) => m4C.some((c) => (o.countryIds || []).includes(c.id))).length} bg={C.blue} />
+                <Stat label="High-severity risks" value={highCount} bg={C.yellow} /><Stat label="Total obstacles" value={obstacles.filter((o) => m4C.some((c) => c.id === o.countryId)).length} bg={C.blue} />
             </div>
             <Card style={{ marginBottom: 16 }}>
                 <h3 className="mb-2 font-semibold" style={{ color: C.ink }}>Readiness by country — {regionName}</h3>
@@ -1187,7 +1392,7 @@ ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for thi
             <Card bg={C.yellow}>
                 <h3 className="mb-2 font-semibold" style={{ color: C.ink }}>Top 3 obstacles — {regionName}</h3>
                 <ol className="grid gap-2">
-                    {m4Ob.map((o, i) => (<li key={o.id} className="flex items-center gap-3 rounded-lg p-2" style={{ background: C.white }}><span className="font-bold" style={{ color: C.soft }}>{i + 1}</span><SevBadge s={o.severity} /><span className="flex-1" style={{ color: C.ink }}>{o.title}</span><span className="text-sm" style={{ color: C.soft }}>{(o.countryIds || []).map(nameOf).filter(Boolean).join(", ")}</span></li>))}
+                    {m4Ob.map((o, i) => (<li key={o.id} className="flex items-center gap-3 rounded-lg p-2" style={{ background: C.white }}><span className="font-bold" style={{ color: C.soft }}>{i + 1}</span><SevBadge s={o.severity} /><span className="flex-1" style={{ color: C.ink }}>{o.title}</span><span className="text-sm" style={{ color: C.soft }}>{nameOf(o.countryId)}</span></li>))}
                     {!m4Ob.length && <li className="text-sm" style={{ color: C.soft }}>No obstacles for this region/wave.</li>}
                 </ol>
             </Card>
@@ -1251,11 +1456,7 @@ ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for thi
                 const allBricks = [...Bk, ...TBk];
                 const bkBy = {}; allBricks.forEach((b) => bkBy[b.name.toLowerCase()] = b.id);
                 const cBy = {}; Cn.forEach((c) => cBy[c.name.toLowerCase()] = c.id);
-                const Ob = sh("Obstacles").map((r) => {
-                    const sev = str(r.severity); const validSev = ["High", "Critical", "Medium", "Low"];
-                    const cid = cBy[str(r.country).toLowerCase()]; const wid = wBy[str(r.wave).toLowerCase()];
-                    return { id: str(r.id) || gid(), title: str(r.title), owner: str(r.owner), severity: validSev.includes(sev) ? sev : "Medium", countryIds: cid ? [cid] : [], waveIds: wid ? [wid] : [], resolution: str(r.resolution), blocks: [], blockIds: [] };
-                }).filter((o) => o.title);
+                const Ob = sh("Obstacles").map((r) => ({ id: str(r.id) || gid(), title: str(r.title), owner: str(r.owner), severity: ["High", "Medium", "Low"].includes(str(r.severity)) ? str(r.severity) : "Medium", countryId: cBy[str(r.country).toLowerCase()] || Cn[0]?.id, waveId: wBy[str(r.wave).toLowerCase()] || W[0]?.id, resolution: str(r.resolution), blocks: [], blockIds: [] })).filter((o) => o.title);
                 // checkbox sheets
                 const wcMap = {}; sh("WaveCountries").forEach((r) => { const w = wBy[str(r.wave).toLowerCase()], c = cBy[str(r.country).toLowerCase()]; if (w && c && yes(r.selected)) wcMap[`${w}|${c}`] = true; });
                 const obuMap = {}; sh("OfferBUs").forEach((r) => { const o = ofBy[str(r.offer).toLowerCase()], b = buBy[str(r.bu).toLowerCase()]; if (o && b && yes(r.selected)) obuMap[`${o}|${b}`] = true; });
@@ -1364,7 +1565,8 @@ ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for thi
                 onAdd={() => setBUs([...bus, { id: gid(), name: "New unit" }])} onChange={(id, p) => setBUs(bus.map((x) => x.id === id ? { ...x, ...p } : x))} onDel={(id) => setBUs(bus.filter((x) => x.id !== id))} />
 
             <SettingsSection title="Tools (enablers)" items={tools} bg={C.blue}
-                onAdd={() => setTools([...tools, { id: gid(), name: "New tool", weight: 0 }])} onChange={(id, p) => setTools(tools.map((x) => x.id === id ? { ...x, ...p } : x))} onDel={(id) => { setTools(tools.filter((x) => x.id !== id)); setBricks(bricks.filter((b) => b.toolId !== id)); setToolAssign(toolAssign.filter((a) => a.toolId !== id)); }} />
+                onAdd={() => setTools([...tools, { id: gid(), name: "New tool", weight: 0 }])} onChange={(id, p) => setTools(tools.map((x) => x.id === id ? { ...x, ...p } : x))} onDel={(id) => { setTools(tools.filter((x) => x.id !== id)); setBricks(bricks.filter((b) => b.toolId !== id)); setToolAssign(toolAssign.filter((a) => a.toolId !== id)); }}
+                extra={(it) => <span className="flex items-center gap-1"><span className="text-xs" style={{ color: C.soft }}>weight</span><input type="number" min={0} step={1} value={it.weight ?? 0} aria-label="Tool weight" onChange={(e) => setTools(tools.map((x) => x.id === it.id ? { ...x, weight: Number(e.target.value) || 0 } : x))} className="w-20 rounded-lg px-2 py-1.5 text-sm" style={inputStyle} /></span>} />
 
             <Card bg={C.blue} style={{ marginBottom: 16 }}>
                 <h3 className="mb-1 font-semibold" style={{ color: C.ink }}>Tool assignments · Tool × Region × Country × Offer × Wave</h3>
@@ -1443,6 +1645,85 @@ ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for thi
                 )}
             </Card>
 
+            <Card bg={C.green} style={{ marginBottom: 16 }}>
+                <h3 className="mb-1 font-semibold" style={{ color: C.ink }}>Tool adoption scopes · where each tool's rollout is tracked</h3>
+                <p className="mb-3 text-sm" style={{ color: C.soft }}>Separate from setup (above): this says where <b>adoption</b> is measured — a whole country, or one business unit within it — with a rollout status and an effective date. Scores are entered in <b>Module 1 → Adoption</b>, using the tasks defined in <b>Module 3 → Adoption enablers</b>.</p>
+                <div className="flex flex-wrap items-end gap-2">
+                    <label className="flex flex-col gap-1 text-xs" style={{ color: C.soft }}>Tool
+                        <select value={asDraft.toolId} aria-label="Tool" onChange={(e) => setAsDraft({ ...asDraft, toolId: e.target.value })} className="rounded-lg px-2 py-1.5 text-sm" style={inputStyle}>
+                            <option value="">Choose…</option>
+                            {tools.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                        </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs" style={{ color: C.soft }}>Country
+                        <select value={asDraft.countryId} aria-label="Country" onChange={(e) => setAsDraft({ ...asDraft, countryId: e.target.value })} className="rounded-lg px-2 py-1.5 text-sm" style={inputStyle}>
+                            <option value="">Choose…</option>
+                            {countries.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </label>
+                    <div className="inline-flex overflow-hidden rounded-lg" style={{ border: `1px solid ${C.line}` }} role="group" aria-label="Scope level">
+                        {["Country", "BusinessUnit"].map((opt) => (
+                            <button key={opt} onClick={() => setAsDraft({ ...asDraft, scopeLevel: opt, buId: opt === "Country" ? "" : asDraft.buId })}
+                                className="px-2.5 py-1.5 text-xs font-semibold focus:outline-none focus:ring-2" aria-pressed={asDraft.scopeLevel === opt}
+                                style={{ background: asDraft.scopeLevel === opt ? C.mid : C.white, color: asDraft.scopeLevel === opt ? C.white : C.soft }}>{opt === "Country" ? "Whole country" : "One BU"}</button>
+                        ))}
+                    </div>
+                    {asDraft.scopeLevel === "BusinessUnit" && (
+                        <label className="flex flex-col gap-1 text-xs" style={{ color: C.soft }}>Business unit
+                            <select value={asDraft.buId} aria-label="Business unit" onChange={(e) => setAsDraft({ ...asDraft, buId: e.target.value })} className="rounded-lg px-2 py-1.5 text-sm" style={inputStyle}>
+                                <option value="">Choose…</option>
+                                {bus.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                        </label>
+                    )}
+                    <label className="flex flex-col gap-1 text-xs" style={{ color: C.soft }}>Status
+                        <select value={asDraft.rolloutStatus} aria-label="Rollout status" onChange={(e) => setAsDraft({ ...asDraft, rolloutStatus: e.target.value })} className="rounded-lg px-2 py-1.5 text-sm" style={inputStyle}>
+                            {["planned", "active", "paused", "retired"].map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                    </label>
+                    <label className="flex flex-col gap-1 text-xs" style={{ color: C.soft }}>Effective date
+                        <input value={asDraft.effectiveDate} aria-label="Effective date dd/mm/yyyy" placeholder="dd/mm/yyyy" onChange={(e) => setAsDraft({ ...asDraft, effectiveDate: e.target.value })} className="w-28 rounded-lg px-2 py-1.5 text-sm" style={{ ...inputStyle, borderColor: validDate(asDraft.effectiveDate) ? C.line : C.high }} />
+                    </label>
+                    <Btn onClick={() => {
+                        if (!asDraft.toolId || !asDraft.countryId) { setAsMsg("Choose a tool and a country first."); return; }
+                        if (asDraft.scopeLevel === "BusinessUnit" && !asDraft.buId) { setAsMsg("Choose a business unit, or switch to Whole country."); return; }
+                        const buId = asDraft.scopeLevel === "BusinessUnit" ? asDraft.buId : null;
+                        const dup = adoptionScopes.some((s) => s.toolId === asDraft.toolId && s.countryId === asDraft.countryId && s.scopeLevel === asDraft.scopeLevel && (s.buId || null) === buId);
+                        if (dup) { setAsMsg("That exact scope already exists."); return; }
+                        setAdoptionScopes([...adoptionScopes, { id: uid(), toolId: asDraft.toolId, countryId: asDraft.countryId, scopeLevel: asDraft.scopeLevel, buId, rolloutStatus: asDraft.rolloutStatus, effectiveDate: asDraft.effectiveDate }]);
+                        setAsMsg("");
+                    }}><Plus size={16} /> Add</Btn>
+                    {asMsg && <span className="text-sm" style={{ color: C.high }}>{asMsg}</span>}
+                </div>
+
+                {adoptionScopes.length > 0 && (
+                    <div className="mt-3 overflow-x-auto">
+                        <table className="w-full text-sm" style={{ color: C.ink }}>
+                            <thead><tr style={{ color: C.soft }}>
+                                <th className="px-2 py-1 text-left font-semibold">Tool</th>
+                                <th className="px-2 py-1 text-left font-semibold">Country</th>
+                                <th className="px-2 py-1 text-left font-semibold">Scope</th>
+                                <th className="px-2 py-1 text-left font-semibold">Status</th>
+                                <th className="px-2 py-1 text-left font-semibold">Effective date</th>
+                                <th className="px-2 py-1"></th>
+                            </tr></thead>
+                            <tbody>
+                                {adoptionScopes.map((s) => (
+                                    <tr key={s.id} style={{ borderTop: `1px solid ${C.line}` }}>
+                                        <td className="px-2 py-1">{tools.find((t) => t.id === s.toolId)?.name ?? "?"}</td>
+                                        <td className="px-2 py-1">{countries.find((c) => c.id === s.countryId)?.name ?? "?"}</td>
+                                        <td className="px-2 py-1">{s.scopeLevel === "BusinessUnit" ? (bus.find((b) => b.id === s.buId)?.name ?? "?") : "Whole country"}</td>
+                                        <td className="px-2 py-1">{s.rolloutStatus}</td>
+                                        <td className="px-2 py-1">{s.effectiveDate}</td>
+                                        <td className="px-2 py-1 text-right"><button aria-label="Delete scope" onClick={() => setAdoptionScopes(adoptionScopes.filter((x) => x.id !== s.id))} className="rounded p-1 focus:outline-none focus:ring-2" style={{ color: C.high }}><Trash2 size={14} /></button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </Card>
+
             <h3 className="mb-2 mt-4 text-sm font-bold uppercase tracking-wide" style={{ color: C.soft }}>Mappings</h3>
             <Matrix title="Offers → Business Units" rows={offers} cols={bus} map={offerBUs} setMap={setOfferBUs} bg={C.blue} />
             <Matrix title="Waves → Countries" rows={waves} cols={countries} map={waveCountry} setMap={setWaveCountry} bg={C.green} />
@@ -1464,40 +1745,6 @@ ${!m4Ob.length ? "<tr><td colspan='6' style='color:#51607d'>No obstacles for thi
             <div className="mx-auto flex max-w-6xl flex-col sm:flex-row">
                 <nav aria-label="Modules" className="flex shrink-0 flex-col p-3 sm:w-60" style={{ background: C.sidebar }}>
                     <div className="mb-4 px-2 pt-1"><div className="text-lg font-bold" style={{ color: C.white }}>Transformation</div><div className="text-xs" style={{ color: "#eef3fb" }}>Today: {todayStr()}</div></div>
-                    {(() => {
-                        const parseDMY = (s) => { const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s || ""); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; };
-                        const now = new Date(); now.setHours(0, 0, 0, 0);
-                        const summaries = regions.map((r) => {
-                            const rcids = countries.filter((c) => c.regionId === r.id).map((c) => c.id);
-                            const relWaves = waves.filter((w) => rcids.some((cid) => waveCountry[`${w.id}|${cid}`]));
-                            const nw = relWaves.filter((w) => { const d = parseDMY(w.deadline); return d && d >= now; })
-                                .sort((a, b) => (parseDMY(a.deadline)?.getTime() ?? 0) - (parseDMY(b.deadline)?.getTime() ?? 0))[0]
-                                || relWaves.sort((a, b) => (parseDMY(b.deadline)?.getTime() ?? 0) - (parseDMY(a.deadline)?.getTime() ?? 0))[0];
-                            if (!nw) return null;
-                            const wcs = rcids.filter((cid) => waveCountry[`${nw.id}|${cid}`]);
-                            const ravg = wcs.length ? Math.round(wcs.reduce((a, cid) => a + readiness(cid, nw.id), 0) / wcs.length) : 0;
-                            const st = status(ravg);
-                            return { r, nw, ravg, st };
-                        }).filter(Boolean);
-                        if (!summaries.length) return null;
-                        return (
-                            <div className="mb-3 hidden sm:block">
-                                <div className="mb-1 px-2 text-xs font-bold uppercase tracking-wide" style={{ color: "#c8d8f0" }}>Regions</div>
-                                {summaries.map((s) => (
-                                    <button key={s.r.id} onClick={() => { setMod("m1"); setM1Region(s.r.id); setM1View("region"); }} className="mb-1 w-full rounded-lg px-2 py-1.5 text-left focus:outline-none focus:ring-2" style={{ background: "rgba(255,255,255,0.12)" }}>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-sm font-semibold" style={{ color: C.white }}>{s.r.name}</span>
-                                            <span className="text-sm font-bold" style={{ color: C.white }}>{s.ravg}%</span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                            <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: s.st.c }} />
-                                            <span className="text-xs" style={{ color: "#c8d8f0" }}>{s.nw.name}</span>
-                                        </div>
-                                    </button>
-                                ))}
-                            </div>
-                        );
-                    })()}
                     <ul className="flex gap-1 sm:flex-col">
                         {MODULES.map(({ id, name, Icon }) => {
                             const on = id === mod; return (
