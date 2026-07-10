@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import { Gauge, AlertTriangle, Layers, FileBarChart, Settings as Cog, ChevronDown, ChevronRight, Plus, Trash2, Download, Calendar, GitBranch, List, Upload, FileDown, CheckSquare, Square, Save, LogOut, Lock, Pencil, CheckCheck, Eraser } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import * as XLSX from "xlsx";
+// PowerPoint export (Dashboard + SteerCo Pack). New dependency: `npm install pptxgenjs`.
+import PptxGenJS from "pptxgenjs";
 // STATIC import: Vite compiles the client into the main chunk, so there is no
 // runtime chunk to fetch this is what kills the "/assets/supabaseClient 404".
 // (The previous `await import(/* @vite-ignore */ path)` told Vite NOT to bundle
@@ -191,6 +193,25 @@ const MODULES = [
     { id: "m5", name: "Settings", Icon: Cog },
 ];
 const keysTrue = (map) => Object.keys(map || {}).filter((k) => map[k]).map((k) => k.split("|"));
+
+/* ---------- PowerPoint export style: plain white background, dark gray text, Arial (titles 12 pt, body 10 pt) ---------- */
+const PPT_FONT = "Arial", PPT_INK = "404040", PPT_LINE_C = "BFBFBF";
+const PPT_TITLE = { fontFace: PPT_FONT, fontSize: 12, bold: true, color: PPT_INK };
+const PPT_TEXT = { fontFace: PPT_FONT, fontSize: 10, color: PPT_INK };
+const newPptx = () => { const p = new PptxGenJS(); p.layout = "LAYOUT_16x9"; return p; };
+const pptSlide = (p, title) => {
+    const s = p.addSlide();
+    s.background = { color: "FFFFFF" };
+    s.addText(title, { ...PPT_TITLE, x: 0.4, y: 0.25, w: 9.2, h: 0.4 });
+    return s;
+};
+const pptTable = (s, header, rows, y = 0.85, colW = undefined) => {
+    const body = [
+        header.map((h) => ({ text: String(h), options: { ...PPT_TEXT, bold: true, fill: { color: "F2F2F2" } } })),
+        ...rows.map((r) => r.map((c) => ({ text: String(c ?? ""), options: PPT_TEXT }))),
+    ];
+    s.addTable(body, { x: 0.4, y, w: 9.2, colW, border: { type: "solid", color: PPT_LINE_C, pt: 0.5 }, valign: "middle", autoPage: true, autoPageRepeatHeader: true });
+};
 
 /* ---------- shared UI (all module scope = stable identity = inputs keep focus) ---------- */
 const Card = ({ children, bg = C.white, style = {} }: { children: any; bg?: string; style?: any }) => (
@@ -979,6 +1000,61 @@ export default function App() {
         );
     };
 
+    /* ---------- Module 1 exports: Excel + PowerPoint (respect the current Region / View / Wave filters) ---------- */
+    const m1RegionLabel = m1Region === "all" ? "All regions" : (regions.find((r) => r.id === m1Region)?.name || "");
+    const m1ViewLabel = m1View === "wave" ? `By wave — ${waves.find((w) => w.id === m1Wave)?.name || ""}` : "By region (all assigned waves)";
+    // One row per (country, wave) in scope. "By wave" = selected wave only; "By region" = every wave the country is assigned to.
+    const dashboardRows = () => {
+        const rows = [];
+        m1Regions.forEach((r) => countries.filter((c) => c.regionId === r.id).forEach((c) => waves.forEach((w) => {
+            if (m1View === "wave" && w.id !== m1Wave) return;
+            if (!waveCountry[`${w.id}|${c.id}`]) return;
+            const v = readiness(c.id, w.id);
+            rows.push({ region: r.name, country: c.name, wave: w.name, deadline: w.deadline, readiness: v, status: status(v).t, cid: c.id, wid: w.id });
+        })));
+        return rows;
+    };
+    const dashboardExcel = () => {
+        const rows = dashboardRows();
+        const wb = XLSX.utils.book_new();
+        const summary = [
+            { Metric: "Generated", Value: todayStr() },
+            { Metric: "Region", Value: m1RegionLabel },
+            { Metric: "View", Value: m1ViewLabel },
+            { Metric: "Avg readiness (%)", Value: rows.length ? Math.round(rows.reduce((a, x) => a + x.readiness, 0) / rows.length) : 0 },
+            { Metric: "Countries ready (>=80%)", Value: `${rows.filter((x) => x.readiness >= 80).length}/${rows.length}` },
+        ];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Summary");
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.map((x) => ({ Region: x.region, Country: x.country, Wave: x.wave, "Wave deadline": x.deadline, "Readiness %": x.readiness, Status: x.status }))), "Readiness");
+        const enRows = [];
+        rows.forEach((x) => enablers(x.cid, x.wid).forEach((u) => enRows.push({ Region: x.region, Country: x.country, Wave: x.wave, Enabler: u.name, Kind: u.kind, Weight: u.weight, "Score %": unitScore(x.cid, x.wid, u.bricks) })));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(enRows), "Enablers");
+        const adRows = [];
+        m1Regions.forEach((r) => countries.filter((c) => c.regionId === r.id).forEach((c) => toolsAdoptedIn(c.id).forEach((tl) => {
+            const sc = toolAdoptionScore(c.id, tl.id);
+            adRows.push({ Region: r.name, Country: c.name, Tool: tl.name, "Adoption %": sc == null ? "" : sc, Status: sc == null ? "No data" : scoreStatus(sc) });
+        })));
+        if (adRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(adRows), "Adoption");
+        XLSX.writeFile(wb, `dashboard_${todayStr().replace(/\//g, "-")}.xlsx`);
+    };
+    const dashboardPpt = async () => {
+        const rows = dashboardRows();
+        const pptx = newPptx();
+        const s1 = pptSlide(pptx, `Readiness dashboard — ${m1RegionLabel} — ${todayStr()}`);
+        pptTable(s1, ["Metric", "Value"], [
+            ["View", m1ViewLabel],
+            ["Avg readiness", `${rows.length ? Math.round(rows.reduce((a, x) => a + x.readiness, 0) / rows.length) : 0}%`],
+            ["Countries ready (>=80%)", `${rows.filter((x) => x.readiness >= 80).length}/${rows.length}`],
+        ], 0.85, [3, 6.2]);
+        m1Regions.forEach((r) => {
+            const rr = rows.filter((x) => x.region === r.name);
+            if (!rr.length) return;
+            const sl = pptSlide(pptx, `Readiness — ${r.name}`);
+            pptTable(sl, ["Country", "Wave", "Deadline", "Readiness %", "Status"], rr.map((x) => [x.country, x.wave, x.deadline, `${x.readiness}%`, x.status]), 0.85, [2.4, 1.6, 1.6, 1.6, 2]);
+        });
+        await pptx.writeFile({ fileName: `dashboard_${todayStr().replace(/\//g, "-")}.pptx` });
+    };
+
     const renderM1 = () => (
         <>
             <SaveBar onSave={saveAll} state={saveState} />
@@ -1005,12 +1081,16 @@ export default function App() {
                         </select>
                     </Field>
                 )}
-                {m1View === "wave" && (
-                    <div className="ml-auto flex gap-2">
-                        <Btn kind="ghost" onClick={() => m1Countries.forEach((c) => setCountryAll(c.id, m1Wave, true))}><CheckCheck size={16} /> Select all</Btn>
-                        <Btn kind="ghost" onClick={() => m1Countries.forEach((c) => setCountryAll(c.id, m1Wave, false))}><Eraser size={16} /> Clear all</Btn>
-                    </div>
-                )}
+                <div className="ml-auto flex flex-wrap gap-2">
+                    {m1View === "wave" && (
+                        <>
+                            <Btn kind="ghost" onClick={() => m1Countries.forEach((c) => setCountryAll(c.id, m1Wave, true))}><CheckCheck size={16} /> Select all</Btn>
+                            <Btn kind="ghost" onClick={() => m1Countries.forEach((c) => setCountryAll(c.id, m1Wave, false))}><Eraser size={16} /> Clear all</Btn>
+                        </>
+                    )}
+                    <Btn kind="ghost" onClick={dashboardExcel}><FileDown size={16} /> Export (Excel)</Btn>
+                    <Btn onClick={dashboardPpt}><FileDown size={16} /> Export (PPT)</Btn>
+                </div>
             </div>
 
             {m1View === "wave" ? (
@@ -1368,6 +1448,34 @@ export default function App() {
         XLSX.writeFile(wb, `steerco_pack_${regionName}_${todayStr().replace(/\//g, "-")}.xlsx`);
     };
 
+    const downloadPackPpt = async () => {
+        const pptx = newPptx();
+        const waveName = waves.find((w) => w.id === m4Wave)?.name || "";
+        const s1 = pptSlide(pptx, `SteerCo Pack — ${regionName} — ${waveName}`);
+        pptTable(s1, ["Metric", "Value"], [
+            ["Generated", todayStr()],
+            ["Avg readiness", `${avg}%`],
+            ["Countries ready", `${readyCount}/${chartData.length}`],
+            ["High-severity risks", highCount],
+            ["Total obstacles (region)", obstacles.filter((o) => m4C.some((c) => c.id === o.countryId)).length],
+        ], 0.85, [3, 6.2]);
+        if (chartData.length) {
+            const s2 = pptSlide(pptx, `Readiness by country — ${regionName} — ${waveName}`);
+            s2.addChart(pptx.ChartType.bar, [{ name: "Readiness %", labels: chartData.map((d) => d.name), values: chartData.map((d) => d.readiness) }], {
+                x: 0.4, y: 0.85, w: 9.2, h: 4.2, barDir: "col",
+                chartColors: chartData.map((d) => status(d.readiness).c.replace("#", "")),
+                valAxisMinVal: 0, valAxisMaxVal: 100,
+                catAxisLabelFontFace: PPT_FONT, catAxisLabelFontSize: 10, catAxisLabelColor: PPT_INK,
+                valAxisLabelFontFace: PPT_FONT, valAxisLabelFontSize: 10, valAxisLabelColor: PPT_INK,
+                showValue: true, dataLabelFontFace: PPT_FONT, dataLabelFontSize: 10, dataLabelColor: PPT_INK,
+            });
+        }
+        const s3 = pptSlide(pptx, `Top 3 obstacles — ${regionName} — ${waveName}`);
+        if (m4Ob.length) pptTable(s3, ["#", "Severity", "Obstacle", "Country", "Owner", "Resolution"], m4Ob.map((o, i) => [i + 1, o.severity, o.title, nameOf(o.countryId), o.owner, o.resolution]), 0.85, [0.4, 1, 2.6, 1.2, 1.4, 2.6]);
+        else s3.addText("No obstacles for this region/wave.", { ...PPT_TEXT, x: 0.4, y: 0.95, w: 9.2, h: 0.4 });
+        await pptx.writeFile({ fileName: `steerco_pack_${regionName}_${todayStr().replace(/\//g, "-")}.pptx` });
+    };
+
     const renderM4 = () => (
         <>
             <SaveBar onSave={saveAll} state={saveState} />
@@ -1377,6 +1485,7 @@ export default function App() {
                 <div className="ml-auto flex gap-2">
                     <Btn kind="ghost" onClick={downloadPNG}><Download size={16} /> Graph (PNG)</Btn>
                     <Btn onClick={downloadPack}><FileDown size={16} /> Download pack (Excel)</Btn>
+                    <Btn onClick={downloadPackPpt}><FileDown size={16} /> Download pack (PPT)</Btn>
                 </div>
             </div>
             {importMsg && <p className="mb-3 text-sm" style={{ color: C.high }}>{importMsg}</p>}
